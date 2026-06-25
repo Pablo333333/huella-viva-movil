@@ -1,4 +1,5 @@
 import api from '@/lib/api';
+import { OfflineRepository } from '@/lib/offline-repository';
 
 export interface TicketResponse {
   id: string;
@@ -17,6 +18,17 @@ export const ticketsService = {
   findById: async (id: string): Promise<TicketResponse> => {
     const response = await api.get<TicketResponse>(`/tickets/${id}`);
     return response.data;
+  },
+  changeStatus: async (id: string, newStateId: string): Promise<void | { offline: boolean }> => {
+    return OfflineRepository.executeAction(
+      'STATUS_CHANGE',
+      'Ticket',
+      id,
+      { newStateId },
+      async () => {
+        await api.patch(`/tickets/${id}/status`, { newStateId });
+      }
+    );
   },
   getComments: async (id: string): Promise<any[]> => {
     const response = await api.get(`/tickets/${id}/comments`);

@@ -6,6 +6,8 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
 import { usePushNotifications } from '../src/features/notifications/hooks/use-push-notifications';
+import { initDatabase } from '@/lib/database';
+import { SyncIndicator } from '@/components/SyncIndicator';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -32,7 +34,9 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (loaded) {
-      SplashScreen.hideAsync();
+      initDatabase().then(() => {
+        SplashScreen.hideAsync();
+      });
     }
   }, [loaded]);
 
@@ -49,6 +53,7 @@ function RootLayoutNav() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <SyncIndicator />
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />

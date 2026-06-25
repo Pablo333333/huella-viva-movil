@@ -1,4 +1,5 @@
 import api from '@/lib/api';
+import { OfflineRepository } from '@/lib/offline-repository';
 
 export enum TramiteType {
   SOLICITUD = 'SOLICITUD',
@@ -29,9 +30,17 @@ export interface CreateTramiteDto {
 }
 
 export const tramitesService = {
-  create: async (data: CreateTramiteDto): Promise<TramiteResponse> => {
-    const response = await api.post<TramiteResponse>('/tramites', data);
-    return response.data;
+  create: async (data: CreateTramiteDto): Promise<TramiteResponse | { offline: boolean }> => {
+    return OfflineRepository.executeAction(
+      'CREATE',
+      'Tramite',
+      null,
+      data,
+      async () => {
+        const response = await api.post<TramiteResponse>('/tramites', data);
+        return response.data;
+      }
+    );
   },
   findAll: async (): Promise<TramiteResponse[]> => {
     const response = await api.get<TramiteResponse[]>('/tramites');
@@ -41,8 +50,16 @@ export const tramitesService = {
     const response = await api.get<TramiteResponse>(`/tramites/${id}`);
     return response.data;
   },
-  changeStatus: async (id: string, newStateId: string): Promise<void> => {
-    await api.patch(`/tramites/${id}/status`, { newStateId });
+  changeStatus: async (id: string, newStateId: string): Promise<void | { offline: boolean }> => {
+    return OfflineRepository.executeAction(
+      'STATUS_CHANGE',
+      'Tramite',
+      id,
+      { newStateId },
+      async () => {
+        await api.patch(`/tramites/${id}/status`, { newStateId });
+      }
+    );
   },
   uploadDocument: async (id: string, fileUri: string, fileName: string, fileType: string): Promise<any> => {
     const formData = new FormData();
