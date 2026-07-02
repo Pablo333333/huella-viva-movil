@@ -111,30 +111,21 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* Sección de Acciones Rápidas */}
-        <View style={styles.quickActions}>
-          <Text style={styles.sectionTitle}>Acciones Rápidas</Text>
-          <View style={styles.actionButtonsRow}>
-            <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/tickets/new')}>
-              <MaterialCommunityIcons name="plus-circle" size={32} color="#2563eb" />
-              <Text style={styles.actionButtonText}>Nuevo Ticket</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/tickets/new')}>
-              <MaterialCommunityIcons name="camera" size={32} color="#2563eb" />
-              <Text style={styles.actionButtonText}>Escanear</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton} onPress={() => {}}>
-              <MaterialCommunityIcons name="microphone" size={32} color="#2563eb" />
-              <Text style={styles.actionButtonText}>Voz</Text>
-            </TouchableOpacity>
-          </View>
+        {/* Botón Central Prominente */}
+        <View style={styles.centerActionContainer}>
+          <TouchableOpacity 
+            style={styles.mainActionButton} 
+            onPress={() => router.push('/new-ticket')}
+            activeOpacity={0.8}
+          >
+            <View style={styles.iconCircle}>
+              <MaterialCommunityIcons name="plus" size={48} color="#fff" />
+            </View>
+            <Text style={styles.mainActionText}>Nuevo Ticket</Text>
+            <Text style={styles.mainActionSubtext}>Reportar una nueva incidencia</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
-
-      {/* Botón Flotante Central Grande */}
-      <TouchableOpacity style={styles.fabMain} onPress={() => router.push('/tickets/new')}>
-        <MaterialCommunityIcons name="plus" size={40} color="#fff" />
-      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -151,7 +142,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
-    paddingBottom: 100,
+    flexGrow: 1,
   },
   headerTitle: {
     fontSize: 28,
@@ -181,7 +172,7 @@ const styles = StyleSheet.create({
   statsGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 30,
+    marginBottom: 40,
   },
   statCard: {
     backgroundColor: '#fff',
@@ -206,51 +197,51 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginTop: 4,
   },
-  quickActions: {
-    marginTop: 10,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
-    color: '#475569',
-  },
-  actionButtonsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  actionButton: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    width: '31%',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  actionButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginTop: 8,
-  },
-  fabMain: {
-    position: 'absolute',
-    bottom: 30,
-    alignSelf: 'center',
-    backgroundColor: '#2563eb',
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+  centerActionContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingBottom: 40,
+  },
+  mainActionButton: {
+    backgroundColor: '#fff',
+    width: '100%',
+    maxWidth: 300,
+    padding: 40,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: '#2563eb',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
     elevation: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  iconCircle: {
+    backgroundColor: '#2563eb',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  mainActionText: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 4,
+  },
+  mainActionSubtext: {
+    fontSize: 14,
+    color: '#64748b',
+    textAlign: 'center',
   },
 });

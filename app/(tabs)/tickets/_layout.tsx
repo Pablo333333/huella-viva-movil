@@ -2,10 +2,9 @@ import { Stack } from 'expo-router';
 
 export default function TicketsLayout() {
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" />
-      <Stack.Screen name="[id]" />
-      <Stack.Screen name="new" />
+    <Stack screenOptions={{ headerShown: true }}>
+      <Stack.Screen name="index" options={{ title: 'Mis Tickets' }} />
+      <Stack.Screen name="[id]" options={{ title: 'Detalle del Ticket' }} />
     </Stack>
   );
 }

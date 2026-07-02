@@ -1,5 +1,11 @@
 import api from '@/lib/api';
 import { OfflineRepository } from '@/lib/offline-repository';
+import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
+
+// En la API legacy de expo-file-system, el enum está disponible
+const UploadTypeMultipart = FileSystem.FileSystemUploadType?.MULTIPART ?? 1;
 
 export enum TicketType {
   SOLICITUD = 'SOLICITUD',
@@ -38,6 +44,11 @@ export interface CreateTicketDto {
   workflowStateId?: string;
   statusId?: string; // Mantener por retrocompatibilidad temporal
   fechaLimite?: string;
+  audioFile?: {
+    uri: string;
+    name: string;
+    type: string;
+  };
 }
 
 export const ticketsService = {
@@ -48,6 +59,40 @@ export const ticketsService = {
       null,
       data,
       async () => {
+        if (data.audioFile) {
+          const token = await SecureStore.getItemAsync('token');
+          const baseUrl = api.defaults.baseURL || (Platform.OS === 'android' ? 'http://192.168.0.113:4000' : 'http://localhost:4000');
+          const url = `${baseUrl}/tickets`;
+
+          console.log('[FileSystem] Subiendo ticket con audio via uploadAsync:', url);
+
+          const response = await FileSystem.uploadAsync(url, data.audioFile.uri, {
+            httpMethod: 'POST',
+            uploadType: UploadTypeMultipart,
+            fieldName: 'audio',
+            headers: {
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+              'Accept': 'application/json',
+            },
+            parameters: {
+              title: data.title || '',
+              description: data.description || '',
+              categoryId: data.categoryId || '',
+              workflowStateId: data.workflowStateId || '',
+              ...(data.type ? { type: data.type } : {}),
+              ...(data.destinatarioId ? { destinatarioId: data.destinatarioId } : {}),
+            },
+          });
+
+          if (response.status < 200 || response.status >= 300) {
+            console.error('[FileSystem Error]', response.body);
+            throw new Error(response.body);
+          }
+
+          return JSON.parse(response.body);
+        }
+
+        console.log('[API] Creando ticket con JSON. Payload:', JSON.stringify(data, null, 2));
         const response = await api.post<TicketResponse>('/tickets', data);
         return response.data;
       }

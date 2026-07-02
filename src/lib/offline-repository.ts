@@ -1,6 +1,11 @@
 import NetInfo from '@react-native-community/netinfo';
 import { getDatabase } from './database';
 import api from './api';
+import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
+
+const UploadTypeMultipart = FileSystem.FileSystemUploadType?.MULTIPART ?? 1;
 
 export interface PendingAction {
   id: number;
@@ -79,7 +84,35 @@ export class OfflineRepository {
         // Lógica de sincronización basada en el tipo de entidad y acción
         if (action.entity_type === 'Ticket') {
           if (action.action_type === 'CREATE') {
-            await api.post('/tickets', payload);
+            if (payload.audioFile) {
+              const token = await SecureStore.getItemAsync('token');
+              const baseUrl = api.defaults.baseURL || (Platform.OS === 'android' ? 'http://192.168.0.113:4000' : 'http://localhost:4000');
+              const url = `${baseUrl}/tickets`;
+
+              const response = await FileSystem.uploadAsync(url, payload.audioFile.uri, {
+                httpMethod: 'POST',
+                uploadType: UploadTypeMultipart,
+                fieldName: 'audio',
+                headers: {
+                  ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                  'Accept': 'application/json',
+                },
+                parameters: {
+                  title: payload.title || '',
+                  description: payload.description || '',
+                  categoryId: payload.categoryId || '',
+                  workflowStateId: payload.workflowStateId || '',
+                  ...(payload.type ? { type: payload.type } : {}),
+                  ...(payload.destinatarioId ? { destinatarioId: payload.destinatarioId } : {}),
+                },
+              });
+
+              if (response.status < 200 || response.status >= 300) {
+                throw new Error(response.body);
+              }
+            } else {
+              await api.post('/tickets', payload);
+            }
           } else if (action.action_type === 'STATUS_CHANGE') {
             await api.patch(`/tickets/${action.entity_id}/status`, payload);
           }

@@ -9,6 +9,26 @@ export default function TicketsListScreen() {
   const { data: tickets, isLoading, refetch } = useTickets();
   const router = useRouter();
 
+  const getStatusColor = (status?: string) => {
+    const s = status?.toUpperCase();
+    switch (s) {
+      case 'NUEVO': return '#fbbf24';
+      case 'EN_PROCESO': return '#3b82f6';
+      case 'COMPLETADO': return '#10b981';
+      case 'CERRADO': return '#78716c';
+      default: return '#9ca3af';
+    }
+  };
+
+  const StatusBadge = ({ status }: { status?: string }) => {
+    const statusName = status || 'N/A';
+    return (
+      <View style={[styles.statusBadge, { backgroundColor: getStatusColor(statusName) }]}>
+        <Text style={styles.statusText}>{statusName}</Text>
+      </View>
+    );
+  };
+
   const renderItem = ({ item }: { item: any }) => (
     <TouchableOpacity 
       style={styles.card}
@@ -19,13 +39,13 @@ export default function TicketsListScreen() {
       }}
     >
       <View style={styles.cardHeader}>
-        <View style={styles.typeRow}>
+        <View style={styles.titleContainer}>
           <MaterialCommunityIcons name="file-document-outline" size={20} color="#3b82f6" />
-          <Text style={styles.typeText}>{item.title || item.type || 'Ticket'}</Text>
+          <Text style={styles.typeText} numberOfLines={1}>
+            {item.title || item.type || 'Ticket'}
+          </Text>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.statusName || item.workflowState?.name || item.status?.name) }]}>
-          <Text style={styles.statusText}>{item.statusName || item.workflowState?.name || item.status?.name || 'N/A'}</Text>
-        </View>
+        <StatusBadge status={item.statusName || item.workflowState?.name || item.status?.name} />
       </View>
       
       <View style={styles.cardBody}>
@@ -41,33 +61,12 @@ export default function TicketsListScreen() {
     </TouchableOpacity>
   );
 
-  const getStatusColor = (status?: string) => {
-    const s = status?.toUpperCase();
-    switch (s) {
-      case 'NUEVO': return '#fbbf24';
-      case 'EN_PROCESO': return '#3b82f6';
-      case 'COMPLETADO': return '#10b981';
-      case 'CERRADO': return '#78716c';
-      default: return '#9ca3af';
-    }
-  };
-
   if (tickets && tickets.length > 0) {
     console.log('[TicketsList] Primer ticket recibido:', JSON.stringify(tickets[0], null, 2));
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      <Stack.Screen options={{ 
-        title: 'Mis Tickets',
-        headerRight: () => (
-          <View style={{ flexDirection: 'row', marginRight: 16, gap: 12 }}>
-            <TouchableOpacity onPress={() => router.push('/mapa')}>
-              <MaterialCommunityIcons name="map-marker-radius" size={24} color="#3b82f6" />
-            </TouchableOpacity>
-          </View>
-        )
-      }} />
       <FlatList
         data={tickets}
         renderItem={renderItem}
@@ -85,7 +84,7 @@ export default function TicketsListScreen() {
       />
       <TouchableOpacity 
         style={styles.fab}
-        onPress={() => router.push('/tickets/new')}
+        onPress={() => router.push('/new-ticket')}
       >
         <MaterialCommunityIcons name="plus" size={30} color="white" />
       </TouchableOpacity>
@@ -101,10 +100,31 @@ const styles = StyleSheet.create({
     marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1, shadowRadius: 2, elevation: 2
   },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  typeRow: { flexDirection: 'row', alignItems: 'center' },
-  typeText: { marginLeft: 8, fontWeight: 'bold', fontSize: 16 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  cardHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginBottom: 12,
+    gap: 8
+  },
+  titleContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center',
+    flex: 1
+  },
+  typeText: { 
+    marginLeft: 8, 
+    fontWeight: 'bold', 
+    fontSize: 16,
+    flex: 1,
+    color: '#111827'
+  },
+  statusBadge: { 
+    paddingHorizontal: 8, 
+    paddingVertical: 4, 
+    borderRadius: 6,
+    alignSelf: 'flex-start'
+  },
   statusText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
   cardBody: { marginBottom: 12 },
   descriptionText: { fontSize: 14, color: '#1f2937', marginBottom: 8 },

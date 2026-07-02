@@ -8,7 +8,7 @@ const baseURL = Platform.OS === 'android'
 
 const api = axios.create({
   baseURL: process.env.EXPO_PUBLIC_API_URL || baseURL,
-  timeout: 5000,
+  timeout: 30000,
 });
 
 api.interceptors.request.use(async (config) => {

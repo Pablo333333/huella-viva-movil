@@ -13,7 +13,7 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: Colors[colorScheme].tint,
-        headerShown: useClientOnlyValue(false, true),
+        headerShown: false, // Ocultamos el header de los Tabs para usar el de los Stacks internos
       }}>
       <Tabs.Screen
         name="index"
