@@ -61,7 +61,7 @@ export const ticketsService = {
       async () => {
         if (data.audioFile) {
           const token = await SecureStore.getItemAsync('token');
-          const baseUrl = api.defaults.baseURL || (Platform.OS === 'android' ? 'http://192.168.0.113:4000' : 'http://localhost:4000');
+          const baseUrl = api.defaults.baseURL;
           const url = `${baseUrl}/tickets`;
 
           console.log('[FileSystem] Subiendo ticket con audio via uploadAsync:', url);

@@ -20,8 +20,12 @@ interface DocumentoVivoProps {
 
 type TabType = 'chat' | 'docs' | 'history';
 
-// URL de la API (ajustar según entorno)
-const API_URL = Platform.OS === 'android' ? 'http://192.168.0.113:4000' : 'http://localhost:4000';
+// URL de la API (desde variables de entorno)
+const API_URL = process.env.EXPO_PUBLIC_API_URL || '';
+
+if (!API_URL) {
+  console.warn('DocumentoVivo: EXPO_PUBLIC_API_URL no está definida');
+}
 
 export const DocumentoVivo: React.FC<DocumentoVivoProps> = ({ entityId, entityType }) => {
   const [activeTab, setActiveTab] = useState<TabType>('chat');

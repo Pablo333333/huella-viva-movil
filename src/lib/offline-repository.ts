@@ -86,7 +86,7 @@ export class OfflineRepository {
           if (action.action_type === 'CREATE') {
             if (payload.audioFile) {
               const token = await SecureStore.getItemAsync('token');
-              const baseUrl = api.defaults.baseURL || (Platform.OS === 'android' ? 'http://192.168.0.113:4000' : 'http://localhost:4000');
+              const baseUrl = api.defaults.baseURL;
               const url = `${baseUrl}/tickets`;
 
               const response = await FileSystem.uploadAsync(url, payload.audioFile.uri, {

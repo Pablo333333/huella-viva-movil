@@ -2,12 +2,14 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-const baseURL = Platform.OS === 'android' 
-  ? 'http://192.168.0.113:4000' 
-  : 'http://localhost:4000';
+const apiURL = process.env.EXPO_PUBLIC_API_URL;
+
+if (!apiURL) {
+  throw new Error('EXPO_PUBLIC_API_URL is not defined. Please check your environment variables.');
+}
 
 const api = axios.create({
-  baseURL: process.env.EXPO_PUBLIC_API_URL || baseURL,
+  baseURL: apiURL,
   timeout: 30000,
 });
 
