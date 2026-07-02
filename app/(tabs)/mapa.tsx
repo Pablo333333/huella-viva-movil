@@ -1,36 +1,37 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Modal } from 'react-native';
+import React, { useState, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, Callout } from 'react-native-maps';
-import { useTramites } from '../../src/features/tramites/hooks/use-tramites';
-import { useTickets } from '../../src/features/tickets/hooks/use-tickets';
-import { useWorkflowStates } from '../../src/features/catalog/hooks/use-catalog';
+import { useTickets } from '@/features/tickets/hooks/use-tickets';
+import { useWorkflowStates } from '@/features/catalog/hooks/use-catalog';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Stack } from 'expo-router';
-import { DocumentoVivo } from '../../src/components/DocumentoVivo';
+import { DocumentoVivo } from '@/components/DocumentoVivo';
 
 export default function MapScreen() {
-  const [selectedEntity, setSelectedEntity] = useState<{ id: string, type: 'TICKET' | 'TRAMITE' } | null>(null);
+  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('');
   
-  const { data: tramites } = useTramites();
-  const { data: tickets } = useTickets();
+  const { data: tickets, isLoading } = useTickets();
   const { data: states } = useWorkflowStates();
 
   const allMarkers = useMemo(() => {
-    const tramiteMarkers = (tramites || [])
+    return (tickets || [])
       .filter(t => t.latitude && t.longitude)
-      .map(t => ({ ...t, markerType: 'TRAMITE' as const }));
-    
-    const ticketMarkers = (tickets || [])
-      .filter(t => t.latitude && t.longitude)
-      .map(t => ({ ...t, markerType: 'TICKET' as const }));
+      .filter(m => !statusFilter || m.statusId === statusFilter);
+  }, [tickets, statusFilter]);
 
-    return [...tramiteMarkers, ...ticketMarkers].filter(m => !statusFilter || m.estadoId === statusFilter || (m as any).workflowStateId === statusFilter);
-  }, [tramites, tickets, statusFilter]);
+  if (isLoading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#3b82f6" />
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
-      <Stack.Screen options={{ title: 'Mapa de Tareas' }} />
+      <Stack.Screen options={{ title: 'Mapa de Tickets' }} />
       
       <MapView
         style={styles.map}
@@ -43,14 +44,14 @@ export default function MapScreen() {
       >
         {allMarkers.map((marker) => (
           <Marker
-            key={`${marker.markerType}-${marker.id}`}
+            key={marker.id}
             coordinate={{ latitude: marker.latitude!, longitude: marker.longitude! }}
-            pinColor={marker.markerType === 'TICKET' ? '#3b82f6' : '#10b981'}
+            pinColor="#3b82f6"
           >
-            <Callout onPress={() => setSelectedEntity({ id: marker.id, type: marker.markerType })}>
+            <Callout onPress={() => setSelectedEntityId(marker.id)}>
               <View style={styles.callout}>
-                <Text style={styles.calloutTitle}>{(marker as any).title || marker.tipo}</Text>
-                <Text style={styles.calloutSubtitle}>{marker.statusName || (marker as any).statusName}</Text>
+                <Text style={styles.calloutTitle}>{marker.title || marker.type || 'Ticket'}</Text>
+                <Text style={styles.calloutSubtitle}>{marker.statusName}</Text>
                 <Text style={styles.calloutLink}>Toca para ver Documento Vivo</Text>
               </View>
             </Callout>
@@ -60,19 +61,19 @@ export default function MapScreen() {
 
       {/* Modal para Documento Vivo */}
       <Modal
-        visible={!!selectedEntity}
+        visible={!!selectedEntityId}
         animationType="slide"
-        onRequestClose={() => setSelectedEntity(null)}
+        onRequestClose={() => setSelectedEntityId(null)}
       >
         <SafeAreaView style={{ flex: 1 }}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Documento Vivo</Text>
-            <TouchableOpacity onPress={() => setSelectedEntity(null)}>
+            <TouchableOpacity onPress={() => setSelectedEntityId(null)}>
               <MaterialCommunityIcons name="close" size={24} color="black" />
             </TouchableOpacity>
           </View>
-          {selectedEntity && (
-            <DocumentoVivo entityId={selectedEntity.id} entityType={selectedEntity.type} />
+          {selectedEntityId && (
+            <DocumentoVivo entityId={selectedEntityId} entityType="TICKET" />
           )}
         </SafeAreaView>
       </Modal>
@@ -87,6 +88,7 @@ export default function MapScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   map: { flex: 1 },
   callout: { width: 200, padding: 8 },
   calloutTitle: { fontWeight: 'bold', fontSize: 14 },

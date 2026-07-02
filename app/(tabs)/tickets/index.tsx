@@ -1,31 +1,37 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView } from 'react-native';
-import { useTramites } from '../../src/features/tramites/hooks/use-tramites';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTickets } from '@/features/tickets/hooks/use-tickets';
 import { useRouter, Stack } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-export default function TramitesListScreen() {
-  const { data: tramites, isLoading, refetch } = useTramites();
+export default function TicketsListScreen() {
+  const { data: tickets, isLoading, refetch } = useTickets();
   const router = useRouter();
 
   const renderItem = ({ item }: { item: any }) => (
     <TouchableOpacity 
       style={styles.card}
-      onPress={() => router.push(`/tramites/${item.id}`)}
+      onPress={() => {
+        if (item.id) {
+          router.push(`/tickets/${item.id}`);
+        }
+      }}
     >
       <View style={styles.cardHeader}>
         <View style={styles.typeRow}>
           <MaterialCommunityIcons name="file-document-outline" size={20} color="#3b82f6" />
-          <Text style={styles.typeText}>{item.tipo}</Text>
+          <Text style={styles.typeText}>{item.title || item.type || 'Ticket'}</Text>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.estadoName) }]}>
-          <Text style={styles.statusText}>{item.estadoName}</Text>
+        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.statusName || item.workflowState?.name || item.status?.name) }]}>
+          <Text style={styles.statusText}>{item.statusName || item.workflowState?.name || item.status?.name || 'N/A'}</Text>
         </View>
       </View>
       
       <View style={styles.cardBody}>
-        <Text style={styles.senderText}>De: {item.remitenteName}</Text>
-        <Text style={styles.receiverText}>Para: {item.destinatarioName}</Text>
+        {item.description && <Text style={styles.descriptionText} numberOfLines={2}>{item.description}</Text>}
+        <Text style={styles.senderText}>De: {item.remitenteName || 'Sistema'}</Text>
+        <Text style={styles.receiverText}>Para: {item.destinatarioName || 'Asignado'}</Text>
       </View>
       
       <View style={styles.cardFooter}>
@@ -36,7 +42,8 @@ export default function TramitesListScreen() {
   );
 
   const getStatusColor = (status?: string) => {
-    switch (status) {
+    const s = status?.toUpperCase();
+    switch (s) {
       case 'NUEVO': return '#fbbf24';
       case 'EN_PROCESO': return '#3b82f6';
       case 'COMPLETADO': return '#10b981';
@@ -45,35 +52,40 @@ export default function TramitesListScreen() {
     }
   };
 
+  if (tickets && tickets.length > 0) {
+    console.log('[TicketsList] Primer ticket recibido:', JSON.stringify(tickets[0], null, 2));
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{ 
-        title: 'Mis Trámites',
+        title: 'Mis Tickets',
         headerRight: () => (
           <View style={{ flexDirection: 'row', marginRight: 16, gap: 12 }}>
             <TouchableOpacity onPress={() => router.push('/mapa')}>
               <MaterialCommunityIcons name="map-marker-radius" size={24} color="#3b82f6" />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => router.push('/tramites/kanban')}>
-              <MaterialCommunityIcons name="view-column" size={24} color="#3b82f6" />
-            </TouchableOpacity>
           </View>
         )
       }} />
       <FlatList
-        data={tramites}
+        data={tickets}
         renderItem={renderItem}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => (item?.id ? item.id.toString() : Math.random().toString())}
         contentContainerStyle={styles.list}
         onRefresh={refetch}
         refreshing={isLoading}
         ListEmptyComponent={
-          !isLoading && <Text style={styles.emptyText}>No tienes trámites pendientes.</Text>
+          isLoading ? (
+            <ActivityIndicator size="large" color="#3b82f6" style={{ marginTop: 40 }} />
+          ) : (
+            <Text style={styles.emptyText}>No tienes tickets pendientes.</Text>
+          )
         }
       />
       <TouchableOpacity 
         style={styles.fab}
-        onPress={() => router.push('/tramites/new')}
+        onPress={() => router.push('/tickets/new')}
       >
         <MaterialCommunityIcons name="plus" size={30} color="white" />
       </TouchableOpacity>
@@ -95,6 +107,7 @@ const styles = StyleSheet.create({
   statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   statusText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
   cardBody: { marginBottom: 12 },
+  descriptionText: { fontSize: 14, color: '#1f2937', marginBottom: 8 },
   senderText: { fontSize: 13, color: '#4b5563' },
   receiverText: { fontSize: 13, color: '#4b5563', marginTop: 2 },
   cardFooter: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#f3f4f6', paddingTop: 8 },

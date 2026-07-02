@@ -1,28 +1,56 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  View, Text, StyleSheet, SafeAreaView, TextInput, 
+  View, Text, StyleSheet, TextInput, 
   TouchableOpacity, ScrollView, ActivityIndicator, Alert 
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
-import { useCreateTramite, useAnalyzeTramiteImage } from '../../src/features/tramites/hooks/use-tramites';
-import { TramiteType } from '../../src/features/tramites/services/tramites.service';
+import { useCreateTicket, useAnalyzeTicketImage } from '@/features/tickets/hooks/use-tickets';
+import { useWorkflowStates, useUsers } from '@/features/catalog/hooks/use-catalog';
+import { TicketType } from '@/features/tickets/services/tickets.service';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 
-export default function NewTramiteScreen() {
+export default function NewTicketScreen() {
   const router = useRouter();
-  const [tipo, setTipo] = useState<TramiteType>(TramiteType.SOLICITUD);
-  const [destinatarioId, setDestinatarioId] = useState('user-1'); // Mock
-  const [estadoId, setEstadoId] = useState('state-new-id'); // Esto debería venir de un catálogo
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [type, setType] = useState<TicketType>(TicketType.SOLICITUD);
+  const [destinatarioId, setDestinatarioId] = useState(''); 
+  const [categoryId, setCategoryId] = useState('');
+  const [workflowStateId, setWorkflowStateId] = useState('');
 
-  const createTramite = useCreateTramite({
+  const { data: states } = useWorkflowStates();
+  const { data: categories } = useCategories();
+  const { data: users } = useUsers();
+
+  useEffect(() => {
+    if (states && states.length > 0) {
+      const newState = states.find(s => s.name.toUpperCase() === 'NUEVO');
+      if (newState) setWorkflowStateId(newState.id);
+    }
+  }, [states]);
+
+  useEffect(() => {
+    if (categories && categories.length > 0) {
+      setCategoryId(categories[0].id);
+    }
+  }, [categories]);
+
+  useEffect(() => {
+    if (users && users.length > 0 && !destinatarioId) {
+      setDestinatarioId(users[0].id);
+    }
+  }, [users]);
+
+  const createTicket = useCreateTicket({
     onSuccess: () => {
-      Alert.alert('Éxito', 'Trámite creado correctamente');
+      Alert.alert('Éxito', 'Ticket creado correctamente');
       router.back();
     },
   });
 
-  const analyzeImage = useAnalyzeTramiteImage();
+  const analyzeImage = useAnalyzeTicketImage();
 
   const handleAiAutofill = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -45,7 +73,9 @@ export default function NewTramiteScreen() {
         type: 'image/jpeg',
       }, {
         onSuccess: (data) => {
-          if (data.tipo) setTipo(data.tipo as TramiteType);
+          if (data.tipo) setType(data.tipo as TicketType);
+          if (data.titulo) setTitle(data.titulo);
+          if (data.resumen) setDescription(data.resumen);
           Alert.alert('IA: Análisis Completado', `Tipo sugerido: ${data.tipo}\n\nResumen: ${data.resumen}`);
         }
       });
@@ -53,47 +83,67 @@ export default function NewTramiteScreen() {
   };
 
   const handleSubmit = () => {
-    createTramite.mutate({
-      tipo,
+    if (!title) {
+      Alert.alert('Error', 'El título es obligatorio');
+      return;
+    }
+    if (!categoryId) {
+      Alert.alert('Error', 'La categoría es obligatoria');
+      return;
+    }
+    createTicket.mutate({
+      title,
+      description,
+      type,
       destinatarioId,
-      estadoId,
+      categoryId,
+      workflowStateId,
     });
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <Stack.Screen options={{ title: 'Nuevo Trámite' }} />
+      <Stack.Screen options={{ title: 'Nuevo Ticket' }} />
       <ScrollView style={styles.form}>
-        <Text style={styles.label}>Tipo de Documento</Text>
+        <Text style={styles.label}>Título del Ticket</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Ej: Falla en luminaria..."
+          value={title}
+          onChangeText={setTitle}
+        />
+
+        <Text style={styles.label}>Descripción (Voz/Texto)</Text>
+        <TextInput
+          style={[styles.input, { height: 100 }]}
+          placeholder="Describe el problema..."
+          multiline
+          value={description}
+          onChangeText={setDescription}
+        />
+
+        <Text style={styles.label}>Tipo</Text>
         <View style={styles.pickerContainer}>
-          {Object.values(TramiteType).map((t) => (
+          {Object.values(TicketType).map((t) => (
             <TouchableOpacity 
               key={t} 
-              style={[styles.pickerItem, tipo === t && styles.pickerItemActive]}
-              onPress={() => setTipo(t)}
+              style={[styles.pickerItem, type === t && styles.pickerItemActive]}
+              onPress={() => setType(t)}
             >
-              <Text style={[styles.pickerText, tipo === t && styles.pickerTextActive]}>{t}</Text>
+              <Text style={[styles.pickerText, type === t && styles.pickerTextActive]}>{t}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        <Text style={styles.label}>Destinatario (ID)</Text>
-        <TextInput 
-          style={styles.input}
-          value={destinatarioId}
-          onChangeText={setDestinatarioId}
-          placeholder="ID del destinatario"
-        />
-
         <TouchableOpacity 
           style={styles.submitBtn}
           onPress={handleSubmit}
-          disabled={createTramite.isPending}
+          disabled={createTicket.isPending}
         >
-          {createTramite.isPending ? (
+          {createTicket.isPending ? (
             <ActivityIndicator color="white" />
           ) : (
-            <Text style={styles.submitBtnText}>Crear Trámite</Text>
+            <Text style={styles.submitBtnText}>Crear Ticket</Text>
           )}
         </TouchableOpacity>
 
@@ -106,8 +156,8 @@ export default function NewTramiteScreen() {
             <ActivityIndicator color="#3b82f6" />
           ) : (
             <>
-              <MaterialCommunityIcons name="sparkles" size={20} color="#3b82f6" />
-              <Text style={styles.aiBtnText}>Autocompletar con IA</Text>
+              <MaterialCommunityIcons name="camera" size={20} color="#3b82f6" />
+              <Text style={styles.aiBtnText}>Escanear con IA (OCR)</Text>
             </>
           )}
         </TouchableOpacity>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import { authService } from '../services/auth.service';
+import { authService } from '@/features/auth/services/auth.service';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter } from 'expo-router';
 
@@ -15,12 +15,16 @@ export default function LoginScreen() {
     
     setLoading(true);
     try {
+      console.log(`[Login] Intentando login para: ${email} en ${authService.login}`);
       const data = await authService.login(email, password);
+      console.log('[Login] Respuesta recibida con éxito');
       await SecureStore.setItemAsync('token', data.access_token);
       await SecureStore.setItemAsync('user', JSON.stringify(data.user));
       router.replace('/(tabs)');
-    } catch (error) {
-      Alert.alert('Error', 'Credenciales inválidas');
+    } catch (error: any) {
+      console.error('[Login] Error durante el proceso:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Error de conexión';
+      Alert.alert('Error', `No se pudo iniciar sesión: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -70,7 +74,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 32,
-    fontBold: 'bold',
+    fontWeight: 'bold',
     color: '#2563eb',
     textAlign: 'center',
   },

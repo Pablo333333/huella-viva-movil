@@ -14,3 +14,10 @@ export const useWorkflowStates = () => {
     queryFn: catalogService.getWorkflowStates,
   });
 };
+
+export const useUsers = () => {
+  return useQuery({
+    queryKey: ['users'],
+    queryFn: catalogService.getUsers,
+  });
+};

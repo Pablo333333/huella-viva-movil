@@ -7,10 +7,6 @@ import {
   useTicketComments, useCreateTicketComment, useTicketDocuments, 
   useUploadTicketDocument, useSummarizeTicket, useTicketSummary, useTicketHistory 
 } from '../features/tickets/hooks/use-tickets';
-import { 
-  useTramiteComments, useCreateTramiteComment, useTramiteDocuments, 
-  useUploadTramiteDocument, useSummarizeTramite, useTramiteSummary 
-} from '../features/tramites/hooks/use-tramites';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -19,13 +15,13 @@ import { useQueryClient } from '@tanstack/react-query';
 
 interface DocumentoVivoProps {
   entityId: string;
-  entityType: 'TICKET' | 'TRAMITE';
+  entityType: 'TICKET';
 }
 
 type TabType = 'chat' | 'docs' | 'history';
 
 // URL de la API (ajustar según entorno)
-const API_URL = Platform.OS === 'android' ? 'http://10.0.2.2:3001' : 'http://localhost:3001';
+const API_URL = Platform.OS === 'android' ? 'http://192.168.0.113:4000' : 'http://localhost:4000';
 
 export const DocumentoVivo: React.FC<DocumentoVivoProps> = ({ entityId, entityType }) => {
   const [activeTab, setActiveTab] = useState<TabType>('chat');
@@ -42,40 +38,30 @@ export const DocumentoVivo: React.FC<DocumentoVivoProps> = ({ entityId, entityTy
 
     socket.on('messageReceived', (comment) => {
       console.log('New message received via socket (Mobile):', comment);
-      if (entityType === 'TICKET') {
-        queryClient.invalidateQueries({ queryKey: ['ticket-comments', entityId] });
-      } else {
-        queryClient.invalidateQueries({ queryKey: ['tramite-comments', entityId] });
-      }
+      queryClient.invalidateQueries({ queryKey: ['tickets', entityId, 'comments'] });
     });
 
     socket.on('statusChanged', (data) => {
       console.log('Status changed via socket (Mobile):', data);
-      if (entityType === 'TICKET') {
-        queryClient.invalidateQueries({ queryKey: ['ticket', entityId] });
-        queryClient.invalidateQueries({ queryKey: ['ticket-history', entityId] });
-      } else {
-        queryClient.invalidateQueries({ queryKey: ['tramite', entityId] });
-      }
+      queryClient.invalidateQueries({ queryKey: ['tickets', entityId] });
+      queryClient.invalidateQueries({ queryKey: ['tickets', entityId, 'history'] });
     });
 
     return () => {
       socket.emit('leaveRoom', { roomId: entityId });
       socket.disconnect();
     };
-  }, [entityId, entityType, queryClient]);
+  }, [entityId, queryClient]);
 
-  const isTicket = entityType === 'TICKET';
+  const commentsQuery = useTicketComments(entityId);
+  const createCommentMutation = useCreateTicketComment(entityId);
   
-  const commentsQuery = isTicket ? useTicketComments(entityId) : useTramiteComments(entityId);
-  const createCommentMutation = isTicket ? useCreateTicketComment(entityId) : useCreateTramiteComment(entityId);
+  const documentsQuery = useTicketDocuments(entityId);
+  const uploadDocumentMutation = useUploadTicketDocument(entityId);
   
-  const documentsQuery = isTicket ? useTicketDocuments(entityId) : useTramiteDocuments(entityId);
-  const uploadDocumentMutation = isTicket ? useUploadTicketDocument(entityId) : useUploadTramiteDocument(entityId);
-  
-  const summarizeMutation = isTicket ? useSummarizeTicket(entityId) : useSummarizeTramite(entityId);
-  const summaryQuery = isTicket ? useTicketSummary(entityId) : useTramiteSummary(entityId);
-  const historyQuery = isTicket ? useTicketHistory(entityId) : { data: [], isLoading: false };
+  const summarizeMutation = useSummarizeTicket(entityId);
+  const summaryQuery = useTicketSummary(entityId);
+  const historyQuery = useTicketHistory(entityId);
 
   const handleSendComment = () => {
     if (!newComment.trim()) return;
@@ -137,7 +123,7 @@ export const DocumentoVivo: React.FC<DocumentoVivoProps> = ({ entityId, entityTy
       <View style={styles.summaryCard}>
         <View style={styles.summaryHeader}>
           <View style={styles.row}>
-            <MaterialCommunityIcons name="sparkles" size={20} color="#3b82f6" />
+            <MaterialCommunityIcons name="creation" size={20} color="#3b82f6" />
             <Text style={styles.summaryTitle}>Resumen Inteligente</Text>
           </View>
           <TouchableOpacity 
@@ -306,13 +292,25 @@ const styles = StyleSheet.create({
   activeTab: { borderBottomWidth: 2, borderBottomColor: '#3b82f6' },
   tabText: { marginLeft: 6, fontSize: 13, color: '#6b7280', fontWeight: '500' },
   activeTabText: { color: '#3b82f6' },
-  content: { flex: 1 },
-  chatContainer: { padding: 16 },
-  commentBubble: { backgroundColor: 'white', padding: 12, borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: '#e5e7eb' },
-  commentHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  commentUser: { fontSize: 12, fontWeight: 'bold', color: '#374151' },
-  commentDate: { fontSize: 10, color: '#9ca3af' },
-  commentText: { fontSize: 14, color: '#1f2937' },
+  content: { flex: 1, backgroundColor: '#f0f2f5' },
+  chatContainer: { padding: 10 },
+  commentBubble: { 
+    backgroundColor: 'white', 
+    padding: 10, 
+    borderRadius: 15, 
+    marginBottom: 8, 
+    maxWidth: '85%',
+    alignSelf: 'flex-start',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 1
+  },
+  commentHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
+  commentUser: { fontSize: 11, fontWeight: 'bold', color: '#2563eb' },
+  commentDate: { fontSize: 9, color: '#9ca3af', marginLeft: 8 },
+  commentText: { fontSize: 15, color: '#1f2937' },
   docsContainer: { padding: 16 },
   docItem: { 
     flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', 

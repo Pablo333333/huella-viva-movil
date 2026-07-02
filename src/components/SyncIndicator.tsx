@@ -1,12 +1,45 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSync } from '@/features/notifications/hooks/use-sync';
+import NetInfo from '@react-native-community/netinfo';
+import { OfflineRepository } from '@/lib/offline-repository';
 
 export const SyncIndicator = () => {
-  const { isOffline, hasPending, pendingCount, sync } = useSync();
+  const [isOffline, setIsOffline] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsOffline(!state.isConnected || !state.isInternetReachable);
+      if (state.isConnected && state.isInternetReachable) {
+        OfflineRepository.syncPendingActions().then(updateCount);
+      }
+    });
+
+    const updateCount = () => {
+      OfflineRepository.getPendingActionsCount().then(setPendingCount);
+    };
+
+    updateCount();
+    const interval = setInterval(updateCount, 5000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
+  }, []);
+
+  const hasPending = pendingCount > 0;
 
   if (!isOffline && !hasPending) return null;
+
+  const handleSync = () => {
+    if (!isOffline) {
+      OfflineRepository.syncPendingActions().then(() => {
+        OfflineRepository.getPendingActionsCount().then(setPendingCount);
+      });
+    }
+  };
 
   return (
     <TouchableOpacity 
@@ -14,7 +47,7 @@ export const SyncIndicator = () => {
         styles.container, 
         isOffline ? styles.offline : styles.pending
       ]}
-      onPress={sync}
+      onPress={handleSync}
       disabled={isOffline}
     >
       <Ionicons 

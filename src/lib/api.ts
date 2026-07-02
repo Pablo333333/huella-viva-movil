@@ -2,21 +2,47 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-// Para Android Emulator, localhost es 10.0.2.2
 const baseURL = Platform.OS === 'android' 
-  ? 'http://10.0.2.2:3000' 
-  : 'http://localhost:3000';
+  ? 'http://192.168.0.113:4000' 
+  : 'http://localhost:4000';
 
 const api = axios.create({
   baseURL: process.env.EXPO_PUBLIC_API_URL || baseURL,
+  timeout: 5000,
 });
 
 api.interceptors.request.use(async (config) => {
-  const token = await SecureStore.getItemAsync('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  try {
+    const token = await SecureStore.getItemAsync('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+  } catch (e) {
+    console.error('[API Request] Error reading token from SecureStore:', e);
   }
+  
+  console.log(`[API Request] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
   return config;
+}, (error) => {
+  console.error('[API Request Error]', error);
+  return Promise.reject(error);
 });
+
+api.interceptors.response.use(
+  (response) => {
+    console.log(`[API Response] ${response.status} from ${response.config.url}`);
+    return response;
+  },
+  (error) => {
+    if (error.code === 'ECONNABORTED') {
+      console.error(`[API Timeout] The server at ${error.config?.url} took too long to respond.`);
+    } else if (!error.response) {
+      console.error(`[API Network Error] Could not connect to ${error.config?.url}. Check if the server is running and accessible at ${error.config?.baseURL}`);
+    } else {
+      console.error(`[API Error] ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+    }
+    return Promise.reject(error);
+  }
+);
 
 export default api;

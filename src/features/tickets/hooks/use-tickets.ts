@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ticketsService } from '../services/tickets.service';
+import { ticketsService, CreateTicketDto } from '../services/tickets.service';
 
 export const useTickets = () => {
   return useQuery({
@@ -13,6 +13,17 @@ export const useTicket = (id: string) => {
     queryKey: ['tickets', id],
     queryFn: () => ticketsService.findById(id),
     enabled: !!id,
+  });
+};
+
+export const useCreateTicket = (options?: { onSuccess?: () => void }) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateTicketDto) => ticketsService.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      options?.onSuccess?.();
+    },
   });
 };
 
@@ -68,6 +79,13 @@ export const useSummarizeTicket = (id: string) => {
     onSuccess: (data) => {
       queryClient.setQueryData(['tickets', id, 'summary'], data.summary);
     },
+  });
+};
+
+export const useAnalyzeTicketImage = () => {
+  return useMutation({
+    mutationFn: ({ uri, name, type }: { uri: string; name: string; type: string }) => 
+      ticketsService.analyzeImage(uri, name, type),
   });
 };
 

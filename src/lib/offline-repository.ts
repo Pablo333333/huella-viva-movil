@@ -13,13 +13,18 @@ export interface PendingAction {
 export class OfflineRepository {
   static async executeAction(
     actionType: 'CREATE' | 'UPDATE' | 'DELETE' | 'STATUS_CHANGE',
-    entityType: 'Ticket' | 'Tramite',
+    entityType: 'Ticket',
     entityId: string | null,
     payload: any,
     apiCall: () => Promise<any>
   ) {
     const state = await NetInfo.fetch();
     const db = await getDatabase();
+
+    if (!db) {
+      console.error('Database not available for offline action');
+      return await apiCall();
+    }
 
     if (state.isConnected && state.isInternetReachable) {
       try {
@@ -48,6 +53,7 @@ export class OfflineRepository {
 
   static async getPendingActionsCount(): Promise<number> {
     const db = await getDatabase();
+    if (!db) return 0;
     const result: any = await db.getFirstAsync('SELECT COUNT(*) as count FROM pending_actions WHERE sync_pending = 1');
     return result?.count || 0;
   }
@@ -57,6 +63,7 @@ export class OfflineRepository {
     if (!state.isConnected || !state.isInternetReachable) return;
 
     const db = await getDatabase();
+    if (!db) return;
     const pendingActions: PendingAction[] = await db.getAllAsync(
       'SELECT * FROM pending_actions WHERE sync_pending = 1 ORDER BY created_at ASC'
     );
@@ -75,12 +82,6 @@ export class OfflineRepository {
             await api.post('/tickets', payload);
           } else if (action.action_type === 'STATUS_CHANGE') {
             await api.patch(`/tickets/${action.entity_id}/status`, payload);
-          }
-        } else if (action.entity_type === 'Tramite') {
-          if (action.action_type === 'CREATE') {
-            await api.post('/tramites', payload);
-          } else if (action.action_type === 'STATUS_CHANGE') {
-            await api.patch(`/tramites/${action.entity_id}/status`, payload);
           }
         }
 
