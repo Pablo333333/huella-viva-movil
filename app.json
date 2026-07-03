@@ -22,6 +22,11 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.kontrolia.app",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyCSJfseY2QKnMNGLP5MClVolLc5FMNxf_g"
+        }
+      },
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS"
@@ -42,10 +47,22 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      "expo-camera",
+      "expo-location",
+      "expo-notifications",
+      "expo-secure-store",
+      "expo-sqlite",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b5ac19d7-4ea1-4e40-b261-1b7fdbd35c68"
     },
     "extra": {
       "router": {},

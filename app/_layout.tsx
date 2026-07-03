@@ -2,6 +2,7 @@ import { useFonts } from 'expo-font';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useState } from 'react';
 
 const queryClient = new QueryClient();
 import * as SplashScreen from 'expo-splash-screen';
@@ -11,6 +12,9 @@ import 'react-native-reanimated';
 import { useColorScheme } from '@/components/useColorScheme';
 import { initDatabase } from '@/lib/database';
 import { SyncIndicator } from '@/components/SyncIndicator';
+import { GlobalErrorBoundary } from '@/components/GlobalErrorBoundary';
+import { logError } from '@/lib/logger';
+import { View, Text, StyleSheet } from 'react-native';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -26,29 +30,90 @@ export const unstable_settings = {
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
+  const [initError, setInitError] = useState<string | null>(null);
 
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
-  useEffect(() => {
-    if (error) throw error;
-  }, [error]);
+  try {
+    const [loaded, error] = useFonts({
+      SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    });
 
-  useEffect(() => {
-    if (loaded) {
-      initDatabase().then(() => {
-        SplashScreen.hideAsync();
-      });
+    // Expo Router uses Error Boundaries to catch errors in the navigation tree.
+    useEffect(() => {
+      if (error) {
+        logError(error);
+        setInitError(`Error de fuentes: ${error.message}`);
+      }
+    }, [error]);
+
+    useEffect(() => {
+      async function initialize() {
+        try {
+          console.log('[RootLayout] Starting initialization...');
+          await initDatabase();
+          console.log('[RootLayout] Database initialized');
+          if (loaded) {
+            await SplashScreen.hideAsync();
+            console.log('[RootLayout] Splash screen hidden');
+          }
+        } catch (e: any) {
+          console.error('[RootLayout] Initialization error:', e);
+          logError(e);
+          setInitError(`Error de inicialización: ${e.message || String(e)}`);
+          await SplashScreen.hideAsync().catch(() => {});
+        }
+      }
+      initialize();
+    }, [loaded]);
+
+    if (initError) {
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorTitle}>ERROR CRÍTICO</Text>
+          <Text style={styles.errorText}>{initError}</Text>
+        </View>
+      );
     }
-  }, [loaded]);
 
-  if (!loaded) {
-    return null;
+    if (!loaded) {
+      return null;
+    }
+
+    return (
+      <GlobalErrorBoundary>
+        <RootLayoutNav />
+      </GlobalErrorBoundary>
+    );
+  } catch (fatalError: any) {
+    console.error('[RootLayout] Fatal Crash:', fatalError);
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorTitle}>ERROR CRÍTICO (FATAL)</Text>
+        <Text style={styles.errorText}>{fatalError?.toString() || 'Error desconocido'}</Text>
+      </View>
+    );
   }
-
-  return <RootLayoutNav />;
 }
+
+const styles = StyleSheet.create({
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#fee2e2',
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#991b1b',
+    marginBottom: 10,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#b91c1c',
+    textAlign: 'center',
+  },
+});
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme();

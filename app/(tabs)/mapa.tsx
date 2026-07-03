@@ -1,12 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import MapView, { Marker, Callout } from 'react-native-maps';
+import { Marker, Callout } from 'react-native-maps';
 import { useTickets } from '@/features/tickets/hooks/use-tickets';
 import { useWorkflowStates } from '@/features/catalog/hooks/use-catalog';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Stack } from 'expo-router';
 import { DocumentoVivo } from '@/components/DocumentoVivo';
+import { SafeMap } from '@/components/SafeMap';
 
 export default function MapScreen() {
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
@@ -33,7 +34,7 @@ export default function MapScreen() {
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{ title: 'Mapa de Tickets' }} />
       
-      <MapView
+      <SafeMap
         style={styles.map}
         initialRegion={{
           latitude: -12.046374,
@@ -57,7 +58,7 @@ export default function MapScreen() {
             </Callout>
           </Marker>
         ))}
-      </MapView>
+      </SafeMap>
 
       {/* Modal para Documento Vivo */}
       <Modal
