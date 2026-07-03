@@ -14,7 +14,7 @@ import { initDatabase } from '@/lib/database';
 import { SyncIndicator } from '@/components/SyncIndicator';
 import { GlobalErrorBoundary } from '@/components/GlobalErrorBoundary';
 import { logError } from '@/lib/logger';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -42,6 +42,7 @@ export default function RootLayout() {
       if (error) {
         logError(error);
         setInitError(`Error de fuentes: ${error.message}`);
+        SplashScreen.hideAsync().catch(() => {});
       }
     }, [error]);
 
@@ -51,19 +52,20 @@ export default function RootLayout() {
           console.log('[RootLayout] Starting initialization...');
           await initDatabase();
           console.log('[RootLayout] Database initialized');
-          if (loaded) {
-            await SplashScreen.hideAsync();
-            console.log('[RootLayout] Splash screen hidden');
-          }
         } catch (e: any) {
           console.error('[RootLayout] Initialization error:', e);
           logError(e);
           setInitError(`Error de inicialización: ${e.message || String(e)}`);
-          await SplashScreen.hideAsync().catch(() => {});
+        } finally {
+          // Always try to hide the splash screen once we've attempted initialization
+          if (loaded || initError) {
+            await SplashScreen.hideAsync().catch(() => {});
+            console.log('[RootLayout] Splash screen hidden (Final)');
+          }
         }
       }
       initialize();
-    }, [loaded]);
+    }, [loaded, initError]);
 
     if (initError) {
       return (
@@ -75,7 +77,12 @@ export default function RootLayout() {
     }
 
     if (!loaded) {
-      return null;
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#3b82f6" />
+          <Text style={styles.loadingText}>Cargando recursos...</Text>
+        </View>
+      );
     }
 
     return (
@@ -95,6 +102,17 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#6b7280',
+  },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',

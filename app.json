@@ -4,7 +4,7 @@
     "slug": "kontrolia",
     "version": "1.0.0",
     "updates": {
-      "enabled": false
+      "url": "https://u.expo.dev/b5ac19d7-4ea1-4e40-b261-1b7fdbd35c68"
     },
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -53,16 +53,14 @@
       "expo-notifications",
       "expo-secure-store",
       "expo-sqlite",
-      "expo-font"
+      "expo-font",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true
     },
     "runtimeVersion": {
       "policy": "appVersion"
-    },
-    "updates": {
-      "url": "https://u.expo.dev/b5ac19d7-4ea1-4e40-b261-1b7fdbd35c68"
     },
     "extra": {
       "router": {},
