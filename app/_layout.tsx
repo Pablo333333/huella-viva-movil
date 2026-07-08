@@ -1,8 +1,8 @@
 import { useFonts } from 'expo-font';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
+import { Stack, usePathname, useSegments } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 
 const queryClient = new QueryClient();
 import * as SplashScreen from 'expo-splash-screen';
@@ -13,6 +13,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { initDatabase } from '@/lib/database';
 import { SyncIndicator } from '@/components/SyncIndicator';
 import { GlobalErrorBoundary } from '@/components/GlobalErrorBoundary';
+import { AuthProvider } from '@/features/auth/context/AuthProvider';
 import { logError } from '@/lib/logger';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 
@@ -77,6 +78,7 @@ export default function RootLayout() {
     }
 
     if (!loaded) {
+      console.log('[RootLayout] Fonts NOT loaded yet');
       return (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#3b82f6" />
@@ -85,11 +87,8 @@ export default function RootLayout() {
       );
     }
 
-    return (
-      <GlobalErrorBoundary>
-        <RootLayoutNav />
-      </GlobalErrorBoundary>
-    );
+    console.log('[RootLayout] Fonts LOADED, proceeding to render RootLayoutNav');
+    return <RootLayoutNav />;
   } catch (fatalError: any) {
     console.error('[RootLayout] Fatal Crash:', fatalError);
     return (
@@ -137,20 +136,22 @@ function RootLayoutNav() {
   const colorScheme = useColorScheme();
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <SyncIndicator />
-        <Stack>
-          <Stack.Screen name="login" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="new-ticket" options={{ 
-            title: 'Nuevo Ticket',
-            presentation: 'modal',
-            headerShown: true
-          }} />
-          <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-        </Stack>
-      </ThemeProvider>
-    </QueryClientProvider>
+    <AuthProvider>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <SyncIndicator />
+          <Stack>
+            <Stack.Screen name="index" options={{ headerShown: false }} />
+            <Stack.Screen name="login" options={{ headerShown: false }} />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="new-ticket" options={{ 
+              title: 'Nuevo Ticket',
+              presentation: 'modal',
+              headerShown: true
+            }} />
+          </Stack>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </AuthProvider>
   );
 }

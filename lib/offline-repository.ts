@@ -3,7 +3,7 @@ import { getDatabase } from './database';
 import api from './api';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
-import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system';
 
 const UploadTypeMultipart = FileSystem.FileSystemUploadType?.MULTIPART ?? 1;
 

@@ -2,7 +2,7 @@ import api from '@/lib/api';
 import { OfflineRepository } from '@/lib/offline-repository';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
-import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system';
 
 // En la API legacy de expo-file-system, el enum está disponible
 const UploadTypeMultipart = FileSystem.FileSystemUploadType?.MULTIPART ?? 1;
