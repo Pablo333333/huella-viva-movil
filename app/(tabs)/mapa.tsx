@@ -1,109 +1,97 @@
-import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Marker, Callout } from 'react-native-maps';
-import { useTickets } from '@/features/tickets/hooks/use-tickets';
-import { useWorkflowStates } from '@/features/catalog/hooks/use-catalog';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import React, { useState } from 'react';
+import {
+  StyleSheet,
+  View,
+  Modal,
+  TouchableOpacity,
+  ActivityIndicator,
+} from 'react-native';
 import { Stack } from 'expo-router';
-import { DocumentoVivo } from '@/components/DocumentoVivo';
-import { SafeMap } from '@/components/SafeMap';
+import { LiveMap } from '@/components/LiveMap';
+import { TerraVozCapture } from '@/components/TerraVozCapture';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useDefaultCommunity } from '@/features/communities/hooks/use-communities';
+import { TerraVozResponse } from '@/features/terra-voz/services/terra-voz.service';
 
 export default function MapScreen() {
-  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  
-  const { data: tickets, isLoading } = useTickets();
-  const { data: states } = useWorkflowStates();
+  const [showTerraVoz, setShowTerraVoz] = useState(false);
+  const [mapKey, setMapKey] = useState(0);
+  const { communityId, isLoading } = useDefaultCommunity();
 
-  const allMarkers = useMemo(() => {
-    return (tickets || [])
-      .filter(t => t.latitude && t.longitude)
-      .filter(m => !statusFilter || m.statusId === statusFilter);
-  }, [tickets, statusFilter]);
+  const handleSuccess = (_result: TerraVozResponse) => {
+    setShowTerraVoz(false);
+    setMapKey((k) => k + 1);
+  };
 
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color="#2563eb" />
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Stack.Screen options={{ title: 'Mapa de Tickets' }} />
-      
-      <SafeMap
-        style={styles.map}
-        initialRegion={{
-          latitude: -12.046374,
-          longitude: -77.042793,
-          latitudeDelta: 0.0922,
-          longitudeDelta: 0.0421,
+    <View style={styles.container}>
+      <Stack.Screen
+        options={{
+          title: 'Mapa Vivo Territorial',
+          headerShown: false,
         }}
-      >
-        {allMarkers.map((marker) => (
-          <Marker
-            key={marker.id}
-            coordinate={{ latitude: marker.latitude!, longitude: marker.longitude! }}
-            pinColor="#3b82f6"
-          >
-            <Callout onPress={() => setSelectedEntityId(marker.id)}>
-              <View style={styles.callout}>
-                <Text style={styles.calloutTitle}>{marker.title || marker.type || 'Ticket'}</Text>
-                <Text style={styles.calloutSubtitle}>{marker.statusName}</Text>
-                <Text style={styles.calloutLink}>Toca para ver Documento Vivo</Text>
-              </View>
-            </Callout>
-          </Marker>
-        ))}
-      </SafeMap>
+      />
+      <LiveMap key={mapKey} />
 
-      {/* Modal para Documento Vivo */}
-      <Modal
-        visible={!!selectedEntityId}
-        animationType="slide"
-        onRequestClose={() => setSelectedEntityId(null)}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => setShowTerraVoz(true)}
+        accessibilityLabel="Abrir Terra Voz"
       >
-        <SafeAreaView style={{ flex: 1 }}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Documento Vivo</Text>
-            <TouchableOpacity onPress={() => setSelectedEntityId(null)}>
-              <MaterialCommunityIcons name="close" size={24} color="black" />
-            </TouchableOpacity>
-          </View>
-          {selectedEntityId && (
-            <DocumentoVivo entityId={selectedEntityId} entityType="TICKET" />
-          )}
-        </SafeAreaView>
+        <MaterialCommunityIcons name="microphone" size={28} color="white" />
+      </TouchableOpacity>
+
+      <Modal visible={showTerraVoz} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <TerraVozCapture
+            communityId={communityId}
+            onSuccess={handleSuccess}
+            onCancel={() => setShowTerraVoz(false)}
+          />
+        </View>
       </Modal>
-
-      {/* Filtro Flotante */}
-      <View style={styles.filterFab}>
-        <MaterialCommunityIcons name="filter" size={20} color="white" />
-      </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  map: { flex: 1 },
-  callout: { width: 200, padding: 8 },
-  calloutTitle: { fontWeight: 'bold', fontSize: 14 },
-  calloutSubtitle: { fontSize: 12, color: '#6b7280', marginVertical: 2 },
-  calloutLink: { fontSize: 10, color: '#3b82f6', fontWeight: 'bold', marginTop: 4 },
-  modalHeader: { 
-    flexDirection: 'row', justifyContent: 'space-between', 
-    alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#e5e7eb' 
+  container: {
+    flex: 1,
   },
-  modalTitle: { fontSize: 18, fontWeight: 'bold' },
-  filterFab: {
-    position: 'absolute', right: 20, bottom: 20, backgroundColor: '#3b82f6',
-    width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center',
-    elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25, shadowRadius: 3.84
-  }
+  loading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 120,
+    right: 20,
+    backgroundColor: '#ef4444',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    padding: 20,
+  },
 });

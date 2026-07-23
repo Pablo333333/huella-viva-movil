@@ -2,10 +2,10 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-const apiURL = process.env.EXPO_PUBLIC_API_URL || 'https://api.kontrolia.com/v1';
+const apiURL = process.env.EXPO_PUBLIC_API_URL;
 
-if (!process.env.EXPO_PUBLIC_API_URL) {
-  console.warn('[API] EXPO_PUBLIC_API_URL is not defined. Using fallback: ' + apiURL);
+if (!apiURL) {
+  throw new Error('[API] EXPO_PUBLIC_API_URL is not defined in environment variables.');
 }
 
 const api = axios.create({

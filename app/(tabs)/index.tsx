@@ -1,78 +1,18 @@
-import React, { useMemo } from 'react';
-import { StyleSheet, ScrollView, TouchableOpacity, View, ActivityIndicator } from 'react-native';
+import React, { useState } from 'react';
+import { StyleSheet, ScrollView, TouchableOpacity, View, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '@/components/Themed';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useTickets } from '@/features/tickets/hooks/use-tickets';
-import { useWorkflowStates } from '@/features/catalog/hooks/use-catalog';
-import { useRouter } from 'expo-router';
+import { TerraVozCapture } from '@/components/TerraVozCapture';
+import { useDashboardMetrics } from '@/features/activities/hooks/use-dashboard';
+import { useDefaultCommunity } from '@/features/communities/hooks/use-communities';
 
 export default function DashboardScreen() {
-  const router = useRouter();
-  const { data: tickets, isLoading: loadingTickets } = useTickets();
-  const { data: states, isLoading: loadingStates } = useWorkflowStates();
+  const { data: dashboardData, isLoading: loadingMetrics, refetch } = useDashboardMetrics();
+  const { communityId } = useDefaultCommunity();
+  const [showTerraVoz, setShowTerraVoz] = useState(false);
 
-  const stats = useMemo(() => {
-    const all = tickets || [];
-    const catalog = states || [];
-    
-    // Log para depuración profunda
-    if (all.length > 0) {
-      console.log('[Dashboard] --- DEPURACIÓN DE ESTADOS ---');
-      console.log('[Dashboard] Total tickets:', all.length);
-      console.log('[Dashboard] Primer ticket (ejemplo):', {
-        id: all[0].id,
-        title: all[0].title,
-        statusName: all[0].statusName,
-        statusId: (all[0] as any).statusId || (all[0] as any).workflowStateId
-      });
-      console.log('[Dashboard] Catálogo de estados:', catalog.map(s => ({ id: s.id, name: s.name })));
-    }
-
-    // Encontrar IDs de estados dinámicamente por nombre
-    const nuevoState = catalog.find(s => s.name.toUpperCase() === 'NUEVO');
-    const enProcesoState = catalog.find(s => s.name.toUpperCase() === 'EN_PROCESO');
-    const completadoState = catalog.find(s => s.name.toUpperCase() === 'COMPLETADO');
-
-    // Filtrado dinámico: preferimos comparar por ID si tenemos el catálogo, 
-    // pero mantenemos el fallback por nombre para robustez.
-    const filterByState = (ticket: any, targetState: any, targetName: string) => {
-      const ticketStatusId = ticket.workflowStateId || ticket.statusId || ticket.workflow?.id || ticket.status?.id;
-      const ticketStatusName = (
-        ticket.statusName || 
-        ticket.workflowState?.name || 
-        ticket.status?.name || 
-        ticket.workflow?.name
-      )?.toUpperCase();
-      
-      if (targetState && ticketStatusId === targetState.id) return true;
-      if (ticketStatusName === targetName) return true;
-      return false;
-    };
-
-    const counts = {
-      nuevos: all.filter(t => filterByState(t, nuevoState, 'NUEVO')).length,
-      enProceso: all.filter(t => filterByState(t, enProcesoState, 'EN_PROCESO')).length,
-      completados: all.filter(t => filterByState(t, completadoState, 'COMPLETADO')).length,
-    };
-
-    if (all.length > 0) {
-      console.log('[Dashboard] Conteos finales:', counts);
-      console.log('[Dashboard] ------------------------------');
-    }
-
-    return {
-      ...counts,
-      vencidos: all.filter(t => {
-        const date = t.createdAt;
-        const isToday = new Date(date).toDateString() === new Date().toDateString();
-        const isNotCompleted = !filterByState(t, completadoState, 'COMPLETADO');
-        return isToday && isNotCompleted;
-      }).length
-    };
-  }, [tickets, states]);
-
-  if (loadingTickets || loadingStates) {
+  if (loadingMetrics) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2563eb" />
@@ -80,51 +20,102 @@ export default function DashboardScreen() {
     );
   }
 
+  const { kpis, distribution } = dashboardData || { 
+    kpis: { totalActivities: 0, totalCommunities: 0, confidenceIndex: 0, totalCommitments: 0, fulfilledCommitments: 0 },
+    distribution: [] 
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.headerTitle}>Dashboard de Control</Text>
+        <Text style={styles.headerTitle}>Impacto Territorial</Text>
 
-        {/* Alertas Rojas */}
-        {stats.vencidos > 0 && (
-          <View style={styles.alertCard}>
-            <MaterialCommunityIcons name="alert-circle" size={24} color="#fff" />
-            <Text style={styles.alertText}>
-              {stats.vencidos} {stats.vencidos === 1 ? 'Ticket vence' : 'Tickets vencen'} hoy
-            </Text>
+        {/* Índice de Confianza Card */}
+        <View style={styles.confidenceCard}>
+          <View style={styles.confidenceHeader}>
+            <View>
+              <Text style={styles.confidenceLabel}>Índice de Confianza</Text>
+              <Text style={styles.confidenceValue}>{kpis.confidenceIndex}%</Text>
+            </View>
+            <MaterialCommunityIcons name="shield-check" size={40} color="#10b981" />
           </View>
-        )}
+          <View style={styles.confidenceProgressContainer}>
+            <View style={[styles.confidenceProgressBar, { width: `${kpis.confidenceIndex}%` }]} />
+          </View>
+          <Text style={styles.confidenceSubtext}>
+            {kpis.fulfilledCommitments} de {kpis.totalCommitments} compromisos cumplidos
+          </Text>
+        </View>
 
         {/* Resumen Visual */}
         <View style={styles.statsGrid}>
-          <View style={[styles.statCard, { borderLeftColor: '#fbbf24' }]}>
-            <Text style={styles.statNumber}>{stats.nuevos}</Text>
-            <Text style={styles.statLabel}>Nuevos</Text>
-          </View>
           <View style={[styles.statCard, { borderLeftColor: '#3b82f6' }]}>
-            <Text style={styles.statNumber}>{stats.enProceso}</Text>
-            <Text style={styles.statLabel}>En Proceso</Text>
+            <Text style={styles.statNumber}>{kpis.totalActivities}</Text>
+            <Text style={styles.statLabel}>Actividades</Text>
           </View>
           <View style={[styles.statCard, { borderLeftColor: '#10b981' }]}>
-            <Text style={styles.statNumber}>{stats.completados}</Text>
-            <Text style={styles.statLabel}>Completados</Text>
+            <Text style={styles.statNumber}>{kpis.totalCommunities}</Text>
+            <Text style={styles.statLabel}>Comunidades</Text>
+          </View>
+          <View style={[styles.statCard, { borderLeftColor: '#8b5cf6' }]}>
+            <Text style={styles.statNumber}>{kpis.fulfilledCommitments}</Text>
+            <Text style={styles.statLabel}>Hitos</Text>
           </View>
         </View>
 
-        {/* Botón Central Prominente */}
+        {/* Distribución de Actividades */}
+        <View style={styles.distributionSection}>
+          <Text style={styles.sectionTitle}>Gestión por Tipo</Text>
+          {distribution.map((item: any) => (
+            <View key={item.name} style={styles.distItem}>
+              <View style={styles.distHeader}>
+                <Text style={styles.distName}>{item.name}</Text>
+                <Text style={styles.distValue}>{item.value}</Text>
+              </View>
+              <View style={styles.distBarBg}>
+                <View style={[
+                  styles.distBarFill, 
+                  { 
+                    width: kpis.totalActivities > 0 ? `${(item.value / kpis.totalActivities) * 100}%` : '0%',
+                    backgroundColor: item.name === 'REUNION' ? '#3b82f6' : item.name === 'VISITA' ? '#10b981' : '#f59e0b'
+                  }
+                ]} />
+              </View>
+            </View>
+          ))}
+        </View>
+
+        {/* Botón Central Terra Voz */}
         <View style={styles.centerActionContainer}>
           <TouchableOpacity 
             style={styles.mainActionButton} 
-            onPress={() => router.push('/new-ticket')}
+            onPress={() => setShowTerraVoz(true)}
             activeOpacity={0.8}
           >
             <View style={styles.iconCircle}>
-              <MaterialCommunityIcons name="plus" size={48} color="#fff" />
+              <MaterialCommunityIcons name="microphone" size={48} color="#fff" />
             </View>
-            <Text style={styles.mainActionText}>Nuevo Ticket</Text>
-            <Text style={styles.mainActionSubtext}>Reportar una nueva incidencia</Text>
+            <Text style={styles.mainActionText}>Terra Voz</Text>
+            <Text style={styles.mainActionSubtext}>Captura inteligente por voz</Text>
           </TouchableOpacity>
         </View>
+
+        <Modal
+          visible={showTerraVoz}
+          transparent={true}
+          animationType="fade"
+        >
+          <View style={styles.modalOverlay}>
+            <TerraVozCapture 
+              communityId={communityId} 
+              onSuccess={() => {
+                setShowTerraVoz(false);
+                refetch();
+              }}
+              onCancel={() => setShowTerraVoz(false)}
+            />
+          </View>
+        </Modal>
       </ScrollView>
     </SafeAreaView>
   );
@@ -150,29 +141,53 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     color: '#1e293b',
   },
-  alertCard: {
-    backgroundColor: '#ef4444',
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-    shadowColor: '#ef4444',
+  confidenceCard: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 25,
+    shadowColor: '#10b981',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 3,
   },
-  alertText: {
-    color: '#fff',
-    fontSize: 16,
+  confidenceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  confidenceLabel: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  confidenceValue: {
+    fontSize: 36,
     fontWeight: 'bold',
-    marginLeft: 10,
+    color: '#1e293b',
+  },
+  confidenceProgressContainer: {
+    height: 10,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 5,
+    marginBottom: 10,
+    overflow: 'hidden',
+  },
+  confidenceProgressBar: {
+    height: '100%',
+    backgroundColor: '#10b981',
+    borderRadius: 5,
+  },
+  confidenceSubtext: {
+    fontSize: 12,
+    color: '#94a3b8',
   },
   statsGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 40,
+    marginBottom: 25,
   },
   statCard: {
     backgroundColor: '#fff',
@@ -197,17 +212,55 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginTop: 4,
   },
+  distributionSection: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 25,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 15,
+  },
+  distItem: {
+    marginBottom: 15,
+  },
+  distHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 5,
+  },
+  distName: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  distValue: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#1e293b',
+  },
+  distBarBg: {
+    height: 6,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  distBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
   centerActionContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
     paddingBottom: 40,
+    alignItems: 'center',
   },
   mainActionButton: {
     backgroundColor: '#fff',
     width: '100%',
     maxWidth: 300,
-    padding: 40,
+    padding: 30,
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
@@ -221,27 +274,26 @@ const styles = StyleSheet.create({
   },
   iconCircle: {
     backgroundColor: '#2563eb',
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
-    shadowColor: '#2563eb',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
+    marginBottom: 12,
   },
   mainActionText: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#1e293b',
-    marginBottom: 4,
   },
   mainActionSubtext: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#64748b',
-    textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    padding: 20,
   },
 });

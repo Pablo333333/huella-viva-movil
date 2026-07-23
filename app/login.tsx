@@ -41,8 +41,7 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>KONTROLIA</Text>
-      <Text style={styles.subtitle}>Acceso Móvil</Text>
+      <Text style={styles.title}>Huella Viva</Text>
       
       <TextInput
         style={styles.input}

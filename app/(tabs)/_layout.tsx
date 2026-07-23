@@ -4,7 +4,6 @@ import React from 'react';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
-import { useClientOnlyValue } from '@/components/useClientOnlyValue';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -12,8 +11,8 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme].tint,
-        headerShown: false, // Ocultamos el header de los Tabs para usar el de los Stacks internos
+        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        headerShown: false,
       }}>
       <Tabs.Screen
         name="index"
@@ -25,11 +24,11 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="tickets"
+        name="memoria"
         options={{
-          title: 'Mis Tickets',
+          title: 'Memoria',
           tabBarIcon: ({ color }) => (
-            <MaterialCommunityIcons name="file-document" size={28} color={color} />
+            <MaterialCommunityIcons name="book-open-page-variant" size={28} color={color} />
           ),
         }}
       />
