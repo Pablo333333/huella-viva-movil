@@ -13,6 +13,9 @@ const api = axios.create({
   timeout: 30000,
 });
 
+/** Timeout dedicado a multipart / IA (Terra Voz). */
+export const MULTIPART_AI_TIMEOUT_MS = 120_000;
+
 api.interceptors.request.use(async (config) => {
   try {
     const token = await SecureStore.getItemAsync('token');
@@ -22,7 +25,18 @@ api.interceptors.request.use(async (config) => {
   } catch (e) {
     console.error('[API Request] Error reading token from SecureStore:', e);
   }
-  
+
+  // Amplía timeout automáticamente en multipart (audio/IA)
+  const contentType = String(config.headers?.['Content-Type'] ?? '');
+  if (
+    contentType.includes('multipart/form-data') ||
+    config.data instanceof FormData
+  ) {
+    config.timeout = config.timeout && config.timeout > MULTIPART_AI_TIMEOUT_MS
+      ? config.timeout
+      : MULTIPART_AI_TIMEOUT_MS;
+  }
+
   console.log(`[API Request] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
   return config;
 }, (error) => {

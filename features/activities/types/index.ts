@@ -20,6 +20,8 @@ export interface Activity {
   audioUrl?: string | null;
   fotoUrl?: string | null;
   location?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
   userId: string;
   communityId: string;
   commitments?: Commitment[];

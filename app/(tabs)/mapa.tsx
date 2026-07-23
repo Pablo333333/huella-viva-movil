@@ -5,8 +5,8 @@ import {
   Modal,
   TouchableOpacity,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
-import { Stack } from 'expo-router';
 import { LiveMap } from '@/components/LiveMap';
 import { TerraVozCapture } from '@/components/TerraVozCapture';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -33,12 +33,6 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen
-        options={{
-          title: 'Mapa Vivo Territorial',
-          headerShown: false,
-        }}
-      />
       <LiveMap key={mapKey} />
 
       <TouchableOpacity
@@ -46,7 +40,7 @@ export default function MapScreen() {
         onPress={() => setShowTerraVoz(true)}
         accessibilityLabel="Abrir Terra Voz"
       >
-        <MaterialCommunityIcons name="microphone" size={28} color="white" />
+        <MaterialCommunityIcons name="microphone" size={22} color="white" />
       </TouchableOpacity>
 
       <Modal visible={showTerraVoz} transparent animationType="fade">
@@ -74,19 +68,20 @@ const styles = StyleSheet.create({
   },
   fab: {
     position: 'absolute',
-    bottom: 120,
-    right: 20,
+    bottom: Platform.OS === 'ios' ? 20 : 16,
+    right: 16,
     backgroundColor: '#ef4444',
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 8,
+    elevation: 6,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    zIndex: 10,
   },
   modalOverlay: {
     flex: 1,

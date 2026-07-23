@@ -12,8 +12,9 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '@/features/auth/context/AuthProvider';
-import { useTerraVoz } from '@/features/terra-voz/hooks/use-terra-voz';
+import { useTerraVoz, getTerraVozErrorMessage } from '@/features/terra-voz/hooks/use-terra-voz';
 import { TerraVozResponse } from '@/features/terra-voz/services/terra-voz.service';
+import { getCurrentDeviceCoords } from '@/lib/location';
 import {
   useAudioRecorder,
   useAudioRecorderState,
@@ -77,6 +78,20 @@ export const TerraVozCapture: React.FC<Props> = ({
     }
   }, [recorderState.isRecording, pulseAnim]);
 
+  /** Evita "AudioRecorder has already been prepared" al reutilizar la misma instancia. */
+  async function resetRecorderSession() {
+    const status = audioRecorder.getStatus();
+    if (!status.canRecord && !status.isRecording) {
+      return;
+    }
+
+    try {
+      await audioRecorder.stop();
+    } catch (err) {
+      console.warn('TerraVoz: no se pudo detener la sesión previa del grabador', err);
+    }
+  }
+
   async function startRecording() {
     try {
       setErrorMessage(null);
@@ -91,6 +106,7 @@ export const TerraVozCapture: React.FC<Props> = ({
         playsInSilentMode: true,
       });
 
+      await resetRecorderSession();
       await audioRecorder.prepareToRecordAsync();
       audioRecorder.record();
     } catch (err) {
@@ -125,20 +141,28 @@ export const TerraVozCapture: React.FC<Props> = ({
 
     try {
       setErrorMessage(null);
+
+      // GPS real del dispositivo → pin en el mapa donde está el usuario
+      const coords = await getCurrentDeviceCoords();
+      if (!coords) {
+        setErrorMessage(
+          'No se pudo obtener GPS. Activa la ubicación para registrar el pin en el mapa.',
+        );
+        return;
+      }
+
       const response = await terraVoz.mutateAsync({
         ...payload,
         communityId,
         userId: user.id,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
       });
       setResult(response);
     } catch (err: any) {
       console.error('Error procesando Terra Voz', err);
-      const apiMessage =
-        err?.response?.data?.message ||
-        err?.message ||
-        'No se pudo procesar la entrada inteligente.';
       setErrorMessage(
-        Array.isArray(apiMessage) ? apiMessage.join(', ') : String(apiMessage),
+        err?.friendlyMessage || getTerraVozErrorMessage(err),
       );
     }
   }
@@ -158,7 +182,7 @@ export const TerraVozCapture: React.FC<Props> = ({
         <ActivityIndicator size="large" color="#2563eb" />
         <Text style={styles.loadingText}>IA procesando tu captura...</Text>
         <Text style={styles.subLoadingText}>
-          Interpretando lenguaje natural y creando actividad
+          GPS + lenguaje natural → actividad y pin en mapa
         </Text>
       </View>
     );

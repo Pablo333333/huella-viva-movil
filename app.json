@@ -15,7 +15,12 @@
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
-      "package": "com.huellaviva.app"
+      "package": "com.huellaviva.app",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "RECORD_AUDIO"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -25,6 +30,12 @@
           "image": "./assets/images/splash-icon.png",
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Huella Viva necesita tu ubicación para centrar el mapa territorial."
         }
       ]
     ],
