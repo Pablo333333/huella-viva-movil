@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -13,8 +13,12 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '@/features/auth/context/AuthProvider';
 import { useTerraVoz, getTerraVozErrorMessage } from '@/features/terra-voz/hooks/use-terra-voz';
-import { TerraVozResponse } from '@/features/terra-voz/services/terra-voz.service';
-import { getCurrentDeviceCoords } from '@/lib/location';
+import {
+  TerraVozPreviewResponse,
+  TerraVozResponse,
+} from '@/features/terra-voz/services/terra-voz.service';
+import { getCurrentDeviceCoords, DeviceCoords } from '@/lib/location';
+import { ActivityStatus, ActivityType } from '@/features/activities/types';
 import {
   useAudioRecorder,
   useAudioRecorderState,
@@ -39,10 +43,25 @@ interface Props {
 }
 
 const DEMO_PROMPTS = [
-  'Jueves 25 a las 10 am reunión en El Roble con la comunidad',
-  'Hoy visité San José del Guaviare para revisar el pozo',
-  'Compromiso: entregar 50 metros de tubería el próximo viernes',
+  'Hoy visité Medellín para revisar el acueducto',
+  'Reunión mañana en Buenos Aires con la comunidad',
+  'Compromiso: entregar tubería el viernes en San José del Guaviare',
 ];
+
+function locationSourceLabel(source?: string | null): string {
+  switch (source) {
+    case 'name':
+      return 'Extraído del mensaje';
+    case 'gps':
+      return 'Ubicación GPS';
+    case 'transcript':
+      return 'Texto transcrito';
+    default:
+      return '';
+  }
+}
+
+const ACTIVITY_TYPES: ActivityType[] = ['REUNION', 'VISITA', 'INSPECCION', 'TALLER', 'OTRO'];
 
 export const TerraVozCapture: React.FC<Props> = ({
   communityId,
@@ -57,7 +76,13 @@ export const TerraVozCapture: React.FC<Props> = ({
   const [mode, setMode] = useState<CaptureMode>('text');
   const [textInput, setTextInput] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [preview, setPreview] = useState<TerraVozPreviewResponse | null>(null);
   const [result, setResult] = useState<TerraVozResponse | null>(null);
+  const [coords, setCoords] = useState<DeviceCoords | null>(null);
+  const [editedUbicacion, setEditedUbicacion] = useState('');
+  const [editedDescripcion, setEditedDescripcion] = useState('');
+  const [editedTipo, setEditedTipo] = useState<ActivityType>('OTRO');
+  const [editedEstado, setEditedEstado] = useState<ActivityStatus>('EJECUTADA');
 
   const pulseAnim = useSharedValue(0);
 
@@ -78,7 +103,16 @@ export const TerraVozCapture: React.FC<Props> = ({
     }
   }, [recorderState.isRecording, pulseAnim]);
 
-  /** Evita "AudioRecorder has already been prepared" al reutilizar la misma instancia. */
+  useEffect(() => {
+    let cancelled = false;
+    getCurrentDeviceCoords().then((value) => {
+      if (!cancelled) setCoords(value);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function resetRecorderSession() {
     const status = audioRecorder.getStatus();
     if (!status.canRecord && !status.isRecording) {
@@ -109,6 +143,7 @@ export const TerraVozCapture: React.FC<Props> = ({
       await resetRecorderSession();
       await audioRecorder.prepareToRecordAsync();
       audioRecorder.record();
+      getCurrentDeviceCoords().then(setCoords);
     } catch (err) {
       console.error('Error al iniciar grabación', err);
       setErrorMessage('No se pudo iniciar la grabación. Usa el modo texto.');
@@ -126,14 +161,14 @@ export const TerraVozCapture: React.FC<Props> = ({
         setErrorMessage('No se obtuvo el audio. Intenta de nuevo o usa texto.');
         return;
       }
-      await handleProcess({ audioUri: uri });
+      await handlePreview({ audioUri: uri });
     } catch (err) {
       console.error('Error al detener grabación', err);
       setErrorMessage('Error al finalizar la grabación.');
     }
   }
 
-  async function handleProcess(payload: { text?: string; audioUri?: string }) {
+  async function handlePreview(payload: { text?: string; audioUri?: string }) {
     if (!user?.id) {
       setErrorMessage('Debes iniciar sesión para registrar con Terra Voz.');
       return;
@@ -141,29 +176,65 @@ export const TerraVozCapture: React.FC<Props> = ({
 
     try {
       setErrorMessage(null);
+      const gps = coords || (await getCurrentDeviceCoords());
+      if (gps) setCoords(gps);
 
-      // GPS real del dispositivo → pin en el mapa donde está el usuario
-      const coords = await getCurrentDeviceCoords();
-      if (!coords) {
-        setErrorMessage(
-          'No se pudo obtener GPS. Activa la ubicación para registrar el pin en el mapa.',
-        );
-        return;
-      }
-
-      const response = await terraVoz.mutateAsync({
+      const response = await terraVoz.preview.mutateAsync({
         ...payload,
-        communityId,
+        communityId: communityId || user.communityId || undefined,
+        gpsPlaceName: gps?.placeName || undefined,
         userId: user.id,
-        latitude: coords.latitude,
-        longitude: coords.longitude,
+        latitude: gps?.latitude,
+        longitude: gps?.longitude,
+      });
+
+      setPreview(response);
+      setEditedDescripcion(response.parsed.descripcion);
+      setEditedTipo(response.parsed.tipo);
+      setEditedEstado(response.parsed.estado);
+      setEditedUbicacion(
+        response.ubicacionTexto ||
+          response.parsed.comunidadNombre ||
+          gps?.placeName ||
+          '',
+      );
+    } catch (err: any) {
+      console.error('Error procesando Terra Voz', err);
+      setErrorMessage(err?.friendlyMessage || getTerraVozErrorMessage(err));
+    }
+  }
+
+  async function handleConfirm() {
+    if (!user?.id || !preview) return;
+
+    if (editedUbicacion.trim().length < 2) {
+      setErrorMessage('Indica la comunidad o ubicación extraída del mensaje.');
+      return;
+    }
+
+    if (editedDescripcion.trim().length < 12) {
+      setErrorMessage('Completa una descripción clara antes de enviar.');
+      return;
+    }
+
+    try {
+      setErrorMessage(null);
+      const response = await terraVoz.confirm.mutateAsync({
+        transcript: preview.transcript,
+        tipo: editedTipo,
+        descripcion: editedDescripcion.trim(),
+        fecha: preview.parsed.fecha,
+        estado: editedEstado,
+        comunidadNombre: editedUbicacion.trim(),
+        userId: user.id,
+        latitude: preview.latitude ?? coords?.latitude,
+        longitude: preview.longitude ?? coords?.longitude,
+        commitments: preview.parsed.commitments,
       });
       setResult(response);
     } catch (err: any) {
-      console.error('Error procesando Terra Voz', err);
-      setErrorMessage(
-        err?.friendlyMessage || getTerraVozErrorMessage(err),
-      );
+      console.error('Error confirmando Terra Voz', err);
+      setErrorMessage(err?.friendlyMessage || getTerraVozErrorMessage(err));
     }
   }
 
@@ -173,16 +244,18 @@ export const TerraVozCapture: React.FC<Props> = ({
       setErrorMessage('Escribe o pega una frase para simular Terra Voz.');
       return;
     }
-    handleProcess({ text: trimmed });
+    handlePreview({ text: trimmed });
   }
 
-  if (terraVoz.isPending) {
+  const isBusy = terraVoz.preview.isPending || terraVoz.confirm.isPending;
+
+  if (isBusy && !preview) {
     return (
       <View style={styles.card}>
         <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={styles.loadingText}>IA procesando tu captura...</Text>
+        <Text style={styles.loadingText}>Preparando vista previa...</Text>
         <Text style={styles.subLoadingText}>
-          GPS + lenguaje natural → actividad y pin en mapa
+          Transcripción y extracción de lugar. Aún no se guarda nada.
         </Text>
       </View>
     );
@@ -200,6 +273,8 @@ export const TerraVozCapture: React.FC<Props> = ({
         <View style={styles.resultBox}>
           <Text style={styles.resultLabel}>Tipo</Text>
           <Text style={styles.resultValue}>{result.activity.tipo}</Text>
+          <Text style={styles.resultLabel}>Estado</Text>
+          <Text style={styles.resultValue}>{result.activity.estado || editedEstado}</Text>
           <Text style={styles.resultLabel}>Comunidad</Text>
           <Text style={styles.resultValue}>
             {result.communityName || 'Territorio'}
@@ -210,7 +285,7 @@ export const TerraVozCapture: React.FC<Props> = ({
             <>
               <Text style={styles.resultLabel}>Compromisos</Text>
               <Text style={styles.resultValue}>
-                {result.commitmentsCreated} creado(s) automáticamente
+                {result.commitmentsCreated} creado(s)
               </Text>
             </>
           )}
@@ -226,6 +301,134 @@ export const TerraVozCapture: React.FC<Props> = ({
     );
   }
 
+  if (preview) {
+    const canSend =
+      editedUbicacion.trim().length >= 2 && editedDescripcion.trim().length >= 12;
+    const sourceLabel = locationSourceLabel(preview.communitySource);
+
+    return (
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.card} keyboardShouldPersistTaps="handled">
+          <Text style={styles.title}>¿Enviar mensaje?</Text>
+          <Text style={styles.subtitle}>
+            Revisa la vista previa. Solo se guardará si confirmas un mensaje completo.
+          </Text>
+
+          <View style={styles.resultBox}>
+            <Text style={styles.resultLabel}>Transcripción</Text>
+            <Text style={styles.resultValue}>{preview.transcript}</Text>
+          </View>
+
+          {preview.validation.issues.length > 0 && (
+            <View style={styles.warningBox}>
+              {preview.validation.issues.map((issue) => (
+                <Text key={issue} style={styles.warningText}>
+                  • {issue}
+                </Text>
+              ))}
+            </View>
+          )}
+
+          <Text style={styles.fieldLabel}>Tipo</Text>
+          <View style={styles.promptsRow}>
+            {ACTIVITY_TYPES.map((tipo) => (
+              <TouchableOpacity
+                key={tipo}
+                style={[styles.promptChip, editedTipo === tipo && styles.promptChipActive]}
+                onPress={() => setEditedTipo(tipo)}
+              >
+                <Text
+                  style={[
+                    styles.promptChipText,
+                    editedTipo === tipo && styles.promptChipTextActive,
+                  ]}
+                >
+                  {tipo}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.fieldLabel}>Estado</Text>
+          <View style={styles.modeSwitch}>
+            <TouchableOpacity
+              style={[styles.modeChip, editedEstado === 'EJECUTADA' && styles.modeChipActive]}
+              onPress={() => setEditedEstado('EJECUTADA')}
+            >
+              <Text
+                style={[
+                  styles.modeChipText,
+                  editedEstado === 'EJECUTADA' && styles.modeChipTextActive,
+                ]}
+              >
+                Ejecutada
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeChip, editedEstado === 'PROGRAMADA' && styles.modeChipActive]}
+              onPress={() => setEditedEstado('PROGRAMADA')}
+            >
+              <Text
+                style={[
+                  styles.modeChipText,
+                  editedEstado === 'PROGRAMADA' && styles.modeChipTextActive,
+                ]}
+              >
+                Programada
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.fieldLabel}>
+            Comunidad / ubicación{sourceLabel ? ` · ${sourceLabel}` : ''}
+          </Text>
+          <TextInput
+            style={styles.locationInput}
+            placeholder="Ciudad, comunidad o lugar extraído del mensaje"
+            placeholderTextColor="#94a3b8"
+            value={editedUbicacion}
+            onChangeText={setEditedUbicacion}
+          />
+
+          <Text style={styles.fieldLabel}>Descripción</Text>
+          <TextInput
+            style={styles.textInput}
+            multiline
+            value={editedDescripcion}
+            onChangeText={setEditedDescripcion}
+            textAlignVertical="top"
+          />
+
+          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
+          <TouchableOpacity
+            style={[styles.primaryButton, (!canSend || terraVoz.confirm.isPending) && styles.buttonDisabled]}
+            onPress={handleConfirm}
+            disabled={!canSend || terraVoz.confirm.isPending}
+          >
+            {terraVoz.confirm.isPending ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.primaryButtonText}>
+                Enviar mensaje
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.cancelButton}
+            onPress={() => {
+              setPreview(null);
+              setErrorMessage(null);
+            }}
+          >
+            <Text style={styles.cancelText}>Volver a editar</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -236,8 +439,7 @@ export const TerraVozCapture: React.FC<Props> = ({
       >
         <Text style={styles.title}>Terra Voz</Text>
         <Text style={styles.subtitle}>
-          Dicta o escribe la actividad en terreno; la IA crea el evento,
-          compromisos y pin territorial.
+          Dicta o escribe la actividad. Verás una vista previa antes de guardar.
         </Text>
 
         <View style={styles.modeSwitch}>
@@ -307,7 +509,7 @@ export const TerraVozCapture: React.FC<Props> = ({
             </View>
             <Text style={styles.hint}>
               {recorderState.isRecording
-                ? 'Suelta para enviar'
+                ? 'Suelta para previsualizar'
                 : 'Mantén presionado para hablar'}
             </Text>
           </>
@@ -337,12 +539,12 @@ export const TerraVozCapture: React.FC<Props> = ({
             </View>
             <TouchableOpacity style={styles.primaryButton} onPress={submitText}>
               <MaterialCommunityIcons
-                name="send"
+                name="eye-outline"
                 size={18}
                 color="#fff"
                 style={{ marginRight: 8 }}
               />
-              <Text style={styles.primaryButtonText}>Procesar con IA</Text>
+              <Text style={styles.primaryButtonText}>Previsualizar</Text>
             </TouchableOpacity>
           </>
         )}
@@ -383,6 +585,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     marginBottom: 20,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
   },
   modeChip: {
     flexDirection: 'row',
@@ -455,10 +659,25 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     marginBottom: 12,
   },
+  locationInput: {
+    width: '100%',
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#1e293b',
+    backgroundColor: '#f8fafc',
+    marginBottom: 16,
+  },
   promptsRow: {
     width: '100%',
     gap: 8,
     marginBottom: 16,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
   },
   promptChip: {
     backgroundColor: '#eff6ff',
@@ -467,9 +686,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#bfdbfe',
   },
+  promptChipActive: {
+    backgroundColor: '#2563eb',
+    borderColor: '#1d4ed8',
+  },
   promptChipText: {
     fontSize: 12,
     color: '#1d4ed8',
+  },
+  promptChipTextActive: {
+    color: '#fff',
+    fontWeight: '700',
   },
   primaryButton: {
     flexDirection: 'row',
@@ -481,6 +708,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     width: '100%',
     marginBottom: 8,
+  },
+  buttonDisabled: {
+    opacity: 0.5,
   },
   primaryButtonText: {
     color: '#fff',
@@ -549,5 +779,27 @@ const styles = StyleSheet.create({
     color: '#1e293b',
     fontWeight: '600',
     marginTop: 2,
+  },
+  warningBox: {
+    width: '100%',
+    backgroundColor: '#fff7ed',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  warningText: {
+    color: '#c2410c',
+    fontSize: 13,
+    marginBottom: 4,
+  },
+  fieldLabel: {
+    alignSelf: 'flex-start',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 8,
+    textTransform: 'uppercase',
   },
 });

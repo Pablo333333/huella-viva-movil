@@ -1,28 +1,65 @@
 import api from '@/lib/api';
-import { Activity } from '@/features/activities/types';
+import { Activity, ActivityStatus, ActivityType } from '@/features/activities/types';
 import { isAxiosError } from 'axios';
 
 export interface ProcessTerraVozParams {
   text?: string;
   audioUri?: string;
   communityId?: string;
+  gpsPlaceName?: string;
   userId: string;
   latitude?: number;
   longitude?: number;
 }
 
+export interface TerraVozCommitmentPreview {
+  descripcion: string;
+  responsable?: string;
+  fecha_cumplimiento?: string;
+}
+
+export interface TerraVozPreviewResponse {
+  transcript: string;
+  parsed: {
+    tipo: ActivityType;
+    descripcion: string;
+    fecha: string;
+    estado: ActivityStatus;
+    comunidadNombre?: string | null;
+    commitments: TerraVozCommitmentPreview[];
+  };
+  ubicacionTexto: string;
+  communitySource: 'name' | 'gps' | 'transcript' | 'none';
+  validation: { complete: boolean; issues: string[] };
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
+export interface ConfirmTerraVozParams {
+  transcript: string;
+  tipo: ActivityType;
+  descripcion: string;
+  fecha: string;
+  estado: ActivityStatus;
+  comunidadNombre: string;
+  userId: string;
+  latitude?: number;
+  longitude?: number;
+  commitments?: TerraVozCommitmentPreview[];
+}
+
 export interface TerraVozResponse {
   activity: Activity;
   commitmentsCreated: number;
+  communityId?: string;
   communityName?: string;
   transcript: string;
   message: string;
 }
 
-/** Timeout largo: Whisper/GPT + multipart pueden superar 30–60s en feria. */
-export const TERRA_VOZ_TIMEOUT_MS = 120_000;
-const MAX_ATTEMPTS = 3;
-const RETRY_BASE_DELAY_MS = 1200;
+export const TERRA_VOZ_TIMEOUT_MS = 90_000;
+const MAX_ATTEMPTS = 2;
+const RETRY_BASE_DELAY_MS = 800;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -89,6 +126,9 @@ function buildFormData(params: ProcessTerraVozParams): FormData {
   if (params.communityId) {
     formData.append('communityId', params.communityId);
   }
+  if (params.gpsPlaceName) {
+    formData.append('gpsPlaceName', params.gpsPlaceName);
+  }
   formData.append('userId', params.userId);
 
   if (
@@ -104,54 +144,44 @@ function buildFormData(params: ProcessTerraVozParams): FormData {
   return formData;
 }
 
-async function postTerraVozOnce(
+async function postPreviewOnce(
   params: ProcessTerraVozParams,
-): Promise<TerraVozResponse> {
+): Promise<TerraVozPreviewResponse> {
   const formData = buildFormData(params);
-
-  const response = await api.post('/activities/terra-voz', formData, {
+  const response = await api.post('/activities/terra-voz/preview', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
       Accept: 'application/json',
     },
     timeout: TERRA_VOZ_TIMEOUT_MS,
-    // Evita que el timeout global de 30s gane si hay defaults heredados
     maxBodyLength: Infinity,
     maxContentLength: Infinity,
   });
-
   return response.data;
 }
 
 export const terraVozService = {
-  /**
-   * Envía Terra Voz con timeout ampliado y reintentos ante cortes de red momentáneos.
-   */
-  process: async (params: ProcessTerraVozParams): Promise<TerraVozResponse> => {
+  preview: async (params: ProcessTerraVozParams): Promise<TerraVozPreviewResponse> => {
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
-        return await postTerraVozOnce(params);
+        return await postPreviewOnce(params);
       } catch (error) {
         lastError = error;
-        const canRetry =
-          attempt < MAX_ATTEMPTS && isTransientTerraVozError(error);
-
+        const canRetry = attempt < MAX_ATTEMPTS && isTransientTerraVozError(error);
         console.warn(
-          `[TerraVoz] Intento ${attempt}/${MAX_ATTEMPTS} falló`,
+          `[TerraVoz] Preview ${attempt}/${MAX_ATTEMPTS} falló`,
           isAxiosError(error)
             ? { code: error.code, status: error.response?.status }
             : error,
         );
-
         if (!canRetry) {
           throw Object.assign(
             error instanceof Error ? error : new Error(getTerraVozErrorMessage(error)),
             { friendlyMessage: getTerraVozErrorMessage(error) },
           );
         }
-
         await sleep(RETRY_BASE_DELAY_MS * attempt);
       }
     }
@@ -162,5 +192,19 @@ export const terraVozService = {
         : new Error(getTerraVozErrorMessage(lastError)),
       { friendlyMessage: getTerraVozErrorMessage(lastError) },
     );
+  },
+
+  confirm: async (params: ConfirmTerraVozParams): Promise<TerraVozResponse> => {
+    try {
+      const response = await api.post('/activities/terra-voz/confirm', params, {
+        timeout: 30_000,
+      });
+      return response.data;
+    } catch (error) {
+      throw Object.assign(
+        error instanceof Error ? error : new Error(getTerraVozErrorMessage(error)),
+        { friendlyMessage: getTerraVozErrorMessage(error) },
+      );
+    }
   },
 };

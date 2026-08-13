@@ -1,12 +1,14 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter, useSegments } from 'expo-router';
+import { AuthUser } from '../roles';
 
 interface AuthContextType {
   session: string | null;
-  user: any | null;
+  user: AuthUser | null;
   isLoading: boolean;
-  signIn: (token: string, user: any) => Promise<void>;
+  signIn: (token: string, user: AuthUser) => Promise<void>;
+  updateUser: (patch: Partial<AuthUser>) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -23,7 +25,7 @@ export function useAuth() {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   console.log('[AuthProvider] Rendering Provider');
   const [session, setSession] = useState<string | null>(null);
-  const [user, setUser] = useState<any | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const segments = useSegments();
   const router = useRouter();
@@ -71,11 +73,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [session, isLoading, segments]);
 
-  const signIn = async (token: string, userData: any) => {
+  const signIn = async (token: string, userData: AuthUser) => {
     await SecureStore.setItemAsync('token', token);
     await SecureStore.setItemAsync('user', JSON.stringify(userData));
     setSession(token);
     setUser(userData);
+  };
+
+  const updateUser = async (patch: Partial<AuthUser>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...patch };
+      SecureStore.setItemAsync('user', JSON.stringify(next)).catch((err) => {
+        console.error('[AuthProvider] Error updating user', err);
+      });
+      return next;
+    });
   };
 
   const signOut = async () => {
@@ -86,7 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ session, user, isLoading, signIn, signOut }}>
+    <AuthContext.Provider value={{ session, user, isLoading, signIn, updateUser, signOut }}>
       {children}
     </AuthContext.Provider>
   );

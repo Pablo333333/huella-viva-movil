@@ -7,14 +7,15 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
-import { Marker, Region } from 'react-native-maps';
+import MapView, { Camera, Marker, Region } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
-import { SafeMap } from './SafeMap';
+import { MapErrorBoundary, SafeMap, sanitizeCamera } from './SafeMap';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useActivities } from '@/features/activities/hooks/use-activities';
 import { useCommunities } from '@/features/communities/hooks/use-communities';
 import { Activity } from '@/features/activities/types';
+import { Community } from '@/features/communities/services/communities.service';
 
 type MapPointType = 'COMMUNITY' | 'ACTIVITY';
 
@@ -32,11 +33,35 @@ interface MapPoint {
 }
 
 const NEIGHBORHOOD_DELTA = 0.035;
+/** Zoom cercano al usuario para el centro de mando. */
+const USER_DELTA = 0.018;
 const MIN_DELTA = 0.02;
 const MAX_DELTA = 0.35;
 const BBOX_PADDING = 0.2;
-const DEFAULT_PIN_LNG = -74.0817;
-const FALLBACK_PERU = { latitude: -12.0464, longitude: -77.0428 };
+const FALLBACK_COLOMBIA = { latitude: 4.6097, longitude: -74.0817 };
+/** Inclinación fija tipo centro de mando (segura en iOS y Android). */
+const COMMAND_PITCH = 45;
+const COMMAND_HEADING = 0;
+
+function regionToCommandCamera(region: Region): Camera {
+  if (Platform.OS === 'android') {
+    const delta = Math.max(region.latitudeDelta, region.longitudeDelta);
+    const zoom = Math.min(17, Math.max(11, Math.log2(360 / delta) - 1.2));
+    return {
+      center: { latitude: region.latitude, longitude: region.longitude },
+      pitch: COMMAND_PITCH,
+      heading: COMMAND_HEADING,
+      zoom,
+    };
+  }
+
+  return {
+    center: { latitude: region.latitude, longitude: region.longitude },
+    pitch: COMMAND_PITCH,
+    heading: COMMAND_HEADING,
+    altitude: Math.max(900, Math.min(7000, region.latitudeDelta * 111_000 * 1.6)),
+  };
+}
 
 function isValidCoord(lat?: number | null, lng?: number | null): boolean {
   return (
@@ -51,6 +76,17 @@ function isValidCoord(lat?: number | null, lng?: number | null): boolean {
   );
 }
 
+function isValidRegion(region: Region | null): region is Region {
+  return (
+    !!region &&
+    isValidCoord(region.latitude, region.longitude) &&
+    Number.isFinite(region.latitudeDelta) &&
+    Number.isFinite(region.longitudeDelta) &&
+    region.latitudeDelta > 0 &&
+    region.longitudeDelta > 0
+  );
+}
+
 function hashOffset(id: string): number {
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
@@ -60,49 +96,55 @@ function hashOffset(id: string): number {
   return (Math.abs(hash) % 1000) / 100000;
 }
 
+function communityCoords(community?: Community | null): {
+  latitude: number;
+  longitude: number;
+} | null {
+  if (!community) return null;
+  const lat = community.latitude ?? community.location ?? null;
+  const lng = community.longitude ?? null;
+  if (!isValidCoord(lat, lng)) return null;
+  return { latitude: lat!, longitude: lng! };
+}
+
 function activityToPoint(
   activity: Activity,
-  communityLat: number,
-  communityLng: number,
+  fallbackLat: number,
+  fallbackLng: number,
   communityName: string,
 ): MapPoint | null {
-  if (
-    typeof activity.latitude === 'number' &&
-    typeof activity.longitude === 'number' &&
-    Number.isFinite(activity.latitude) &&
-    Number.isFinite(activity.longitude) &&
-    activity.latitude !== 0 &&
-    activity.longitude !== 0
-  ) {
+  if (isValidCoord(activity.latitude, activity.longitude)) {
     return {
       id: `activity-${activity.id}`,
       type: 'ACTIVITY',
-      latitude: activity.latitude,
-      longitude: activity.longitude,
+      latitude: activity.latitude!,
+      longitude: activity.longitude!,
       title: activity.descripcion.slice(0, 60),
       subtitle: `${activity.tipo} · ${communityName}`,
-      estado: activity.tipo,
+      estado: activity.estado || activity.tipo,
       activityId: activity.id,
       activityTipo: activity.tipo,
     };
   }
 
-  const lat = activity.location ?? communityLat;
+  const lat = activity.location ?? fallbackLat;
   const lng =
-    communityLng +
-    hashOffset(activity.id) *
-      (hashOffset(`${activity.id}-lng`) > 0.5 ? 1 : -1);
+    fallbackLng +
+    hashOffset(activity.id) * (hashOffset(`${activity.id}-lng`) > 0.5 ? 1 : -1);
 
   if (!Number.isFinite(lat) || lat === 0) return null;
+
+  const pointLat = lat + hashOffset(activity.id) * 0.002;
+  if (!isValidCoord(pointLat, lng)) return null;
 
   return {
     id: `activity-${activity.id}`,
     type: 'ACTIVITY',
-    latitude: lat + hashOffset(activity.id) * 0.002,
+    latitude: pointLat,
     longitude: lng,
     title: activity.descripcion.slice(0, 60),
     subtitle: `${activity.tipo} · ${communityName}`,
-    estado: activity.tipo,
+    estado: activity.estado || activity.tipo,
     activityId: activity.id,
     activityTipo: activity.tipo,
   };
@@ -154,38 +196,49 @@ function buildRegionFromPoints(points: MapPoint[]): Region | null {
 
 export const LiveMap: React.FC = () => {
   const router = useRouter();
-  const hasInitializedRegion = useRef(false);
-  const initInFlight = useRef(false);
+  const mapRef = useRef<MapView>(null);
+  const mapReadyRef = useRef(false);
+  const gpsInitStarted = useRef(false);
 
   const [selectedPoint, setSelectedPoint] = useState<MapPoint | null>(null);
-  /** Región fija de primer montaje — no se actualiza con pan/zoom */
   const [initialRegion, setInitialRegion] = useState<Region | null>(null);
-  const [locationLabel, setLocationLabel] = useState('CARGANDO TERRITORIO…');
-  const [cameraLockedToPins, setCameraLockedToPins] = useState(false);
-  /** Solo true hasta el primer encuadre exitoso */
+  const [locationLabel, setLocationLabel] = useState('SOLICITANDO GPS…');
   const [bootstrapping, setBootstrapping] = useState(true);
+  const [canShowUserLocation, setCanShowUserLocation] = useState(false);
+  const [mapMounted, setMapMounted] = useState(false);
 
-  const { data: communities, isLoading: loadingCommunities } = useCommunities();
-  const { data: activities, isLoading: loadingActivities } = useActivities();
+  const { data: communities } = useCommunities();
+  const { data: activities } = useActivities();
 
-  const dataLoading = loadingCommunities || loadingActivities;
+  const applyCommandCamera = (region: Region, animate = false) => {
+    const camera = sanitizeCamera(regionToCommandCamera(region));
+    if (!camera || !mapRef.current) return;
+    if (animate) {
+      mapRef.current.animateCamera(camera, { duration: 700 });
+    } else {
+      mapRef.current.setCamera(camera);
+    }
+  };
+
+  useEffect(() => {
+    const timeout = setTimeout(() => setMapMounted(true), 40);
+    return () => clearTimeout(timeout);
+  }, []);
 
   const points = useMemo(() => {
     const result: MapPoint[] = [];
     const communityList = communities || [];
     const activityList = activities || [];
-    const baseLng = DEFAULT_PIN_LNG;
 
     for (const community of communityList) {
-      const lat = community.location;
-      if (typeof lat !== 'number' || !Number.isFinite(lat) || lat === 0) continue;
-      if (!isValidCoord(lat, baseLng)) continue;
+      const coords = communityCoords(community);
+      if (!coords) continue;
 
       result.push({
         id: `community-${community.id}`,
         type: 'COMMUNITY',
-        latitude: lat,
-        longitude: baseLng,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
         title: community.nombre,
         subtitle: 'Territorio',
         poblacion: community.poblacion,
@@ -196,13 +249,13 @@ export const LiveMap: React.FC = () => {
       const community =
         communityList.find((c) => c.id === activity.communityId) ||
         communityList[0];
-      const lat = community?.location ?? activity.location ?? null;
-      const name = community?.nombre || 'Territorio';
-      const fallbackLat =
-        typeof lat === 'number' && Number.isFinite(lat)
-          ? lat
-          : FALLBACK_PERU.latitude;
-      const point = activityToPoint(activity, fallbackLat, baseLng, name);
+      const coords =
+        communityCoords(community) ||
+        (isValidCoord(activity.latitude, activity.longitude)
+          ? { latitude: activity.latitude!, longitude: activity.longitude! }
+          : FALLBACK_COLOMBIA);
+      const name = community?.nombre || activity.communityName || 'Territorio';
+      const point = activityToPoint(activity, coords.latitude, coords.longitude, name);
       if (!point || !isValidCoord(point.latitude, point.longitude)) continue;
       result.push(point);
     }
@@ -210,82 +263,109 @@ export const LiveMap: React.FC = () => {
     return result;
   }, [communities, activities]);
 
-  /**
-   * Inicializa la cámara UNA SOLA VEZ cuando llegan los datos (o GPS).
-   * No reacciona a pan/zoom ni a refetches posteriores.
-   */
   useEffect(() => {
-    if (hasInitializedRegion.current || initInFlight.current) return;
-    if (dataLoading) return;
+    if (gpsInitStarted.current) return;
+    gpsInitStarted.current = true;
 
     let cancelled = false;
-    initInFlight.current = true;
 
-    async function resolveInitialCameraOnce() {
+    async function bootstrapUserLocation() {
+      setLocationLabel('SOLICITANDO GPS…');
+
+      let granted = false;
       try {
-        const pinsRegion = buildRegionFromPoints(points);
-        if (pinsRegion) {
-          if (cancelled) return;
-          hasInitializedRegion.current = true;
-          setInitialRegion(pinsRegion);
-          setCameraLockedToPins(true);
-          setLocationLabel(
-            points.length === 1
-              ? 'ENCUADRE · PRIMER PIN'
-              : `ENCUADRE · ${points.length} PINES`,
-          );
-          setBootstrapping(false);
-          return;
-        }
+        const permission = await Location.requestForegroundPermissionsAsync();
+        granted = permission.status === 'granted';
+      } catch (err) {
+        console.warn('LiveMap: error pidiendo permiso de ubicación', err);
+      }
+      if (cancelled) return;
 
-        setLocationLabel('OBTENIENDO GPS…');
+      setCanShowUserLocation(granted);
 
+      if (granted) {
         try {
-          const { status } = await Location.requestForegroundPermissionsAsync();
-          if (cancelled) return;
+          let latitude: number | null = null;
+          let longitude: number | null = null;
 
-          if (status === 'granted') {
-            const position = await Location.getCurrentPositionAsync({
+          const lastKnown = await Location.getLastKnownPositionAsync();
+          if (
+            lastKnown &&
+            isValidCoord(lastKnown.coords.latitude, lastKnown.coords.longitude)
+          ) {
+            latitude = lastKnown.coords.latitude;
+            longitude = lastKnown.coords.longitude;
+          }
+
+          if (latitude == null || longitude == null) {
+            const current = await Location.getCurrentPositionAsync({
               accuracy: Location.Accuracy.Balanced,
             });
-            if (cancelled) return;
+            if (isValidCoord(current.coords.latitude, current.coords.longitude)) {
+              latitude = current.coords.latitude;
+              longitude = current.coords.longitude;
+            }
+          } else {
+            Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+            })
+              .then((position) => {
+                if (cancelled) return;
+                if (
+                  !isValidCoord(
+                    position.coords.latitude,
+                    position.coords.longitude,
+                  )
+                ) {
+                  return;
+                }
+                const refined = buildRegion(
+                  position.coords.latitude,
+                  position.coords.longitude,
+                  USER_DELTA,
+                );
+                setInitialRegion(refined);
+                if (mapReadyRef.current) {
+                  applyCommandCamera(refined, true);
+                }
+              })
+              .catch(() => {});
+          }
 
-            hasInitializedRegion.current = true;
-            setInitialRegion(
-              buildRegion(
-                position.coords.latitude,
-                position.coords.longitude,
-              ),
-            );
-            setCameraLockedToPins(false);
-            setLocationLabel('TU UBICACIÓN · SIN PINES');
+          if (latitude != null && longitude != null) {
+            const region = buildRegion(latitude, longitude, USER_DELTA);
+            setInitialRegion(region);
+            setLocationLabel('TU UBICACIÓN · CENTRO DE MANDO');
             setBootstrapping(false);
             return;
           }
         } catch (err) {
           console.warn('LiveMap: GPS no disponible para región inicial', err);
         }
-
-        if (cancelled) return;
-        hasInitializedRegion.current = true;
-        setInitialRegion(
-          buildRegion(FALLBACK_PERU.latitude, FALLBACK_PERU.longitude),
-        );
-        setCameraLockedToPins(false);
-        setLocationLabel('FALLBACK · PERÚ');
-        setBootstrapping(false);
-      } finally {
-        initInFlight.current = false;
       }
+
+      if (cancelled) return;
+      const pinsRegion = buildRegionFromPoints(points);
+      setInitialRegion(
+        pinsRegion ||
+          buildRegion(FALLBACK_COLOMBIA.latitude, FALLBACK_COLOMBIA.longitude),
+      );
+      setLocationLabel(
+        granted
+          ? pinsRegion
+            ? 'ENCUADRE · PINES'
+            : 'FALLBACK · COLOMBIA'
+          : 'GPS DENEGADO · ENCUADRE',
+      );
+      setBootstrapping(false);
     }
 
-    resolveInitialCameraOnce();
+    bootstrapUserLocation();
     return () => {
       cancelled = true;
     };
-    // Solo al pasar de loading→datos; no al panear ni al refetch
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataLoading]);
+  }, []);
 
   const getMarkerColor = (type: string, activityTipo?: string) => {
     if (type === 'ACTIVITY') {
@@ -323,187 +403,173 @@ export const LiveMap: React.FC = () => {
     return 'home-group';
   };
 
-  // Loader SOLO en el bootstrap inicial — nunca tras el primer paint del mapa
-  if (bootstrapping || !initialRegion) {
+  if (bootstrapping || !isValidRegion(initialRegion) || !mapMounted) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color="#2563eb" />
         <Text style={styles.loadingText}>
-          {dataLoading
-            ? 'Cargando territorios y actividades...'
-            : locationLabel === 'OBTENIENDO GPS…'
-              ? 'Sin pines — centrando en tu ubicación...'
-              : 'Preparando mapa territorial...'}
+          {locationLabel === 'SOLICITANDO GPS…'
+            ? 'Activando ubicación para el centro de mando...'
+            : 'Centrando mapa en tu posición...'}
         </Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <SafeMap
-        style={styles.map}
-        mapType="hybrid"
-        initialCamera={{
-          center: {
-            latitude: initialRegion.latitude,
-            longitude: initialRegion.longitude,
-          },
-          // Vista "centro de mando": inclinación 3D + ligera rotación
-          pitch: 55,
-          heading: 28,
-          altitude: 1400,
-          zoom: 16,
-        }}
-        pitchEnabled
-        rotateEnabled
-        scrollEnabled
-        zoomEnabled
-        showsUserLocation
-        showsMyLocationButton={!cameraLockedToPins}
-        showsCompass={false}
-        showsBuildings
-        mapPadding={{ top: 0, right: 0, bottom: 8, left: 0 }}
-        minZoomLevel={11}
-        maxZoomLevel={20}
-        moveOnMarkerPress={false}
-        loadingEnabled
-        loadingIndicatorColor="#38bdf8"
-        loadingBackgroundColor="#0f172a"
-      >
-        {points.map((point) => (
-          <Marker
-            key={point.id}
-            identifier={point.id}
-            coordinate={{
-              latitude: point.latitude,
-              longitude: point.longitude,
-            }}
-            title={point.title}
-            description={point.subtitle}
-            pinColor={getMarkerColor(point.type, point.activityTipo)}
-            onPress={() => setSelectedPoint(point)}
-          />
-        ))}
-      </SafeMap>
+    <MapErrorBoundary>
+      <View style={styles.container}>
+        <SafeMap
+          ref={mapRef}
+          style={styles.map}
+          mapType="satellite"
+          initialRegion={initialRegion}
+          onMapReady={() => {
+            mapReadyRef.current = true;
+            if (!initialRegion) return;
+            applyCommandCamera(initialRegion, true);
+          }}
+          pitchEnabled={false}
+          rotateEnabled
+          scrollEnabled
+          zoomEnabled
+          showsUserLocation={canShowUserLocation}
+          showsMyLocationButton={canShowUserLocation}
+          showsCompass={false}
+          showsBuildings={false}
+          showsIndoors={false}
+          showsTraffic={false}
+          showsPointsOfInterest={false}
+          toolbarEnabled={false}
+          moveOnMarkerPress={false}
+          loadingEnabled={false}
+        >
+          {points.map((point) => (
+            <Marker
+              key={point.id}
+              identifier={point.id}
+              coordinate={{
+                latitude: point.latitude,
+                longitude: point.longitude,
+              }}
+              title={point.title}
+              description={point.subtitle}
+              pinColor={getMarkerColor(point.type, point.activityTipo)}
+              onPress={() => setSelectedPoint(point)}
+            />
+          ))}
+        </SafeMap>
 
-      {selectedPoint && (
-        <View style={styles.sheetContainer}>
-          <View style={styles.sheetContent}>
-            <View style={styles.sheetHeader}>
-              <View
-                style={[
-                  styles.typeBadge,
-                  {
-                    backgroundColor:
-                      getMarkerColor(
-                        selectedPoint.type,
-                        selectedPoint.activityTipo,
-                      ) + '20',
-                  },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name={getMarkerIcon(
-                    selectedPoint.type,
-                    selectedPoint.activityTipo,
-                  )}
-                  size={14}
-                  color={getMarkerColor(
-                    selectedPoint.type,
-                    selectedPoint.activityTipo,
-                  )}
-                />
-                <Text
+        {selectedPoint && (
+          <View style={styles.sheetContainer}>
+            <View style={styles.sheetContent}>
+              <View style={styles.sheetHeader}>
+                <View
                   style={[
-                    styles.typeText,
+                    styles.typeBadge,
                     {
-                      color: getMarkerColor(
+                      backgroundColor:
+                        getMarkerColor(
+                          selectedPoint.type,
+                          selectedPoint.activityTipo,
+                        ) + '20',
+                    },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name={getMarkerIcon(
+                      selectedPoint.type,
+                      selectedPoint.activityTipo,
+                    )}
+                    size={14}
+                    color={getMarkerColor(
+                      selectedPoint.type,
+                      selectedPoint.activityTipo,
+                    )}
+                  />
+                  <Text
+                    style={[
+                      styles.typeText,
+                      {
+                        color: getMarkerColor(
+                          selectedPoint.type,
+                          selectedPoint.activityTipo,
+                        ),
+                      },
+                    ]}
+                  >
+                    {selectedPoint.activityTipo || selectedPoint.type}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setSelectedPoint(null)}
+                  style={styles.closeIconButton}
+                >
+                  <MaterialCommunityIcons name="close" size={20} color="#9ca3af" />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.sheetTitle}>{selectedPoint.title}</Text>
+              <Text style={styles.sheetSubtitle}>{selectedPoint.subtitle}</Text>
+
+              <View style={styles.detailsGrid}>
+                {selectedPoint.poblacion != null && (
+                  <View style={styles.detailItem}>
+                    <Text style={styles.detailLabel}>Población</Text>
+                    <Text style={styles.detailValue}>
+                      {selectedPoint.poblacion} hab.
+                    </Text>
+                  </View>
+                )}
+                {selectedPoint.estado && (
+                  <View style={styles.detailItem}>
+                    <Text style={styles.detailLabel}>Estado</Text>
+                    <Text style={styles.detailValue}>{selectedPoint.estado}</Text>
+                  </View>
+                )}
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Coords</Text>
+                  <Text style={styles.detailValue}>
+                    {selectedPoint.latitude.toFixed(4)},{' '}
+                    {selectedPoint.longitude.toFixed(4)}
+                  </Text>
+                </View>
+              </View>
+
+              {selectedPoint.activityId && (
+                <TouchableOpacity
+                  style={[
+                    styles.actionButton,
+                    {
+                      backgroundColor: getMarkerColor(
                         selectedPoint.type,
                         selectedPoint.activityTipo,
                       ),
                     },
                   ]}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    router.push(`/(tabs)/memoria/${selectedPoint.activityId}`);
+                    setSelectedPoint(null);
+                  }}
                 >
-                  {selectedPoint.activityTipo || selectedPoint.type}
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => setSelectedPoint(null)}
-                style={styles.closeIconButton}
-              >
-                <MaterialCommunityIcons
-                  name="close"
-                  size={20}
-                  color="#9ca3af"
-                />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.sheetTitle}>{selectedPoint.title}</Text>
-            <Text style={styles.sheetSubtitle}>{selectedPoint.subtitle}</Text>
-
-            <View style={styles.detailsGrid}>
-              {selectedPoint.poblacion != null && (
-                <View style={styles.detailItem}>
-                  <Text style={styles.detailLabel}>Población</Text>
-                  <Text style={styles.detailValue}>
-                    {selectedPoint.poblacion} hab.
-                  </Text>
-                </View>
+                  <Text style={styles.actionButtonText}>Ver seguimiento</Text>
+                  <MaterialCommunityIcons name="arrow-right" size={18} color="white" />
+                </TouchableOpacity>
               )}
-              {selectedPoint.estado && (
-                <View style={styles.detailItem}>
-                  <Text style={styles.detailLabel}>Tipo</Text>
-                  <Text style={styles.detailValue}>{selectedPoint.estado}</Text>
-                </View>
-              )}
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Coords</Text>
-                <Text style={styles.detailValue}>
-                  {selectedPoint.latitude.toFixed(4)},{' '}
-                  {selectedPoint.longitude.toFixed(4)}
-                </Text>
-              </View>
             </View>
-
-            {selectedPoint.activityId && (
-              <TouchableOpacity
-                style={[
-                  styles.actionButton,
-                  {
-                    backgroundColor: getMarkerColor(
-                      selectedPoint.type,
-                      selectedPoint.activityTipo,
-                    ),
-                  },
-                ]}
-                activeOpacity={0.8}
-                onPress={() => {
-                  router.push(`/(tabs)/memoria/${selectedPoint.activityId}`);
-                  setSelectedPoint(null);
-                }}
-              >
-                <Text style={styles.actionButtonText}>Ver en Memoria Viva</Text>
-                <MaterialCommunityIcons
-                  name="arrow-right"
-                  size={18}
-                  color="white"
-                />
-              </TouchableOpacity>
-            )}
           </View>
-        </View>
-      )}
+        )}
 
-      <View style={styles.badge3D}>
-        <Text style={styles.badge3DText}>SATÉLITE · VISTA 3D</Text>
-        <Text style={styles.badge3DSub}>
-          {locationLabel} · {points.length} pines · {activities?.length || 0}{' '}
-          actividades
-        </Text>
+        <View style={styles.badge3D}>
+          <Text style={styles.badge3DText}>SATÉLITE · CENTRO DE MANDO</Text>
+          <Text style={styles.badge3DSub}>
+            {locationLabel} · {points.length} pines · {activities?.length || 0}{' '}
+            actividades
+          </Text>
+        </View>
       </View>
-    </View>
+    </MapErrorBoundary>
   );
 };
 

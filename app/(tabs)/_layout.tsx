@@ -3,12 +3,16 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '@/features/auth/context/AuthProvider';
+import { isCommunityRole } from '@/features/auth/roles';
 
 const ACTIVE_COLOR = '#1E3A8A';
 const INACTIVE_COLOR = '#94A3B8';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const isCommunity = isCommunityRole(user?.role);
   const bottomInset = Math.max(insets.bottom, Platform.OS === 'android' ? 16 : 20);
 
   const tabBarStyle = {
@@ -43,7 +47,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Inicio',
+          title: isCommunity ? 'Mi comunidad' : 'Inicio',
           tabBarIcon: ({ focused, size }) => (
             <MaterialCommunityIcons
               name="home"
@@ -56,7 +60,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="memoria"
         options={{
-          title: 'Memoria',
+          title: isCommunity ? 'Mi bitácora' : 'Memoria',
           tabBarIcon: ({ focused, size }) => (
             <MaterialCommunityIcons
               name="book-open-page-variant"

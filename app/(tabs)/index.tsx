@@ -1,15 +1,33 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { StyleSheet, ScrollView, TouchableOpacity, View, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '@/components/Themed';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { TerraVozCapture } from '@/components/TerraVozCapture';
 import { useDashboardMetrics } from '@/features/activities/hooks/use-dashboard';
-import { useDefaultCommunity } from '@/features/communities/hooks/use-communities';
+import { useUserCommunity } from '@/features/communities/hooks/use-communities';
+import { useAuth } from '@/features/auth/context/AuthProvider';
+import { getRoleLabel, isAdminRole, isCommunityRole } from '@/features/auth/roles';
+import { useRouter } from 'expo-router';
 
 export default function DashboardScreen() {
-  const { data: dashboardData, isLoading: loadingMetrics, refetch } = useDashboardMetrics();
-  const { communityId } = useDefaultCommunity();
+  const { user, signOut } = useAuth();
+  const router = useRouter();
+  const isAdmin = isAdminRole(user?.role);
+  const isCommunity = isCommunityRole(user?.role);
+  const { community, communityId } = useUserCommunity();
+
+  const metricsFilters = useMemo(() => {
+    if (isCommunity) {
+      return {
+        ...(communityId ? { communityId } : {}),
+        ...(user?.id ? { userId: user.id } : {}),
+      };
+    }
+    return undefined;
+  }, [isCommunity, communityId, user?.id]);
+
+  const { data: dashboardData, isLoading: loadingMetrics, refetch } = useDashboardMetrics(metricsFilters);
   const [showTerraVoz, setShowTerraVoz] = useState(false);
 
   if (loadingMetrics) {
@@ -20,17 +38,48 @@ export default function DashboardScreen() {
     );
   }
 
-  const { kpis, distribution } = dashboardData || { 
-    kpis: { totalActivities: 0, totalCommunities: 0, confidenceIndex: 0, totalCommitments: 0, fulfilledCommitments: 0 },
-    distribution: [] 
+  const { kpis, distribution } = dashboardData || {
+    kpis: {
+      totalActivities: 0,
+      programadasCount: 0,
+      ejecutadasCount: 0,
+      totalCommunities: 0,
+      activeCommunities: 0,
+      confidenceIndex: 0,
+      totalCommitments: 0,
+      fulfilledCommitments: 0,
+      hitos: 0,
+    },
+    distribution: [],
   };
+
+  const distributionTotal = distribution.reduce((sum, item) => sum + item.value, 0);
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.headerTitle}>Impacto Territorial</Text>
+        <View style={styles.headerRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>
+              {isCommunity ? community?.nombre || 'Mi comunidad' : 'Impacto Territorial'}
+            </Text>
+            <View style={[styles.roleBadge, isAdmin ? styles.roleBadgeAdmin : styles.roleBadgeCommunity]}>
+              <Text style={styles.roleBadgeText}>
+                {getRoleLabel(user?.role)} · {user?.name || user?.email}
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity onPress={() => signOut()} style={styles.logoutBtn}>
+            <MaterialCommunityIcons name="logout" size={20} color="#64748b" />
+          </TouchableOpacity>
+        </View>
 
-        {/* Índice de Confianza Card */}
+        {isCommunity && (
+          <Text style={styles.scopeHint}>
+            Vista de tu territorio. Los totales coinciden con Memoria Viva de tu comunidad.
+          </Text>
+        )}
+
         <View style={styles.confidenceCard}>
           <View style={styles.confidenceHeader}>
             <View>
@@ -47,48 +96,76 @@ export default function DashboardScreen() {
           </Text>
         </View>
 
-        {/* Resumen Visual */}
         <View style={styles.statsGrid}>
-          <View style={[styles.statCard, { borderLeftColor: '#3b82f6' }]}>
+          <TouchableOpacity
+            style={[styles.statCard, { borderLeftColor: '#3b82f6' }]}
+            onPress={() => router.push('/(tabs)/memoria')}
+          >
             <Text style={styles.statNumber}>{kpis.totalActivities}</Text>
             <Text style={styles.statLabel}>Actividades</Text>
-          </View>
+            <Text style={styles.statHint}>
+              {kpis.ejecutadasCount} ejec. · {kpis.programadasCount} prog.
+            </Text>
+          </TouchableOpacity>
           <View style={[styles.statCard, { borderLeftColor: '#10b981' }]}>
-            <Text style={styles.statNumber}>{kpis.totalCommunities}</Text>
+            <Text style={styles.statNumber}>
+              {isCommunity ? 1 : kpis.totalCommunities}
+            </Text>
             <Text style={styles.statLabel}>Comunidades</Text>
+            {!isCommunity && (
+              <Text style={styles.statHint}>{kpis.activeCommunities} con registros</Text>
+            )}
           </View>
           <View style={[styles.statCard, { borderLeftColor: '#8b5cf6' }]}>
-            <Text style={styles.statNumber}>{kpis.fulfilledCommitments}</Text>
+            <Text style={styles.statNumber}>{kpis.hitos ?? kpis.fulfilledCommitments}</Text>
             <Text style={styles.statLabel}>Hitos</Text>
+            <Text style={styles.statHint}>compromisos cumplidos</Text>
           </View>
         </View>
 
-        {/* Distribución de Actividades */}
         <View style={styles.distributionSection}>
-          <Text style={styles.sectionTitle}>Gestión por Tipo</Text>
-          {distribution.map((item: any) => (
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Gestión por Tipo</Text>
+            <Text style={styles.sectionMeta}>
+              {distributionTotal}/{kpis.totalActivities}
+            </Text>
+          </View>
+          {distribution.map((item) => (
             <View key={item.name} style={styles.distItem}>
               <View style={styles.distHeader}>
                 <Text style={styles.distName}>{item.name}</Text>
                 <Text style={styles.distValue}>{item.value}</Text>
               </View>
               <View style={styles.distBarBg}>
-                <View style={[
-                  styles.distBarFill, 
-                  { 
-                    width: kpis.totalActivities > 0 ? `${(item.value / kpis.totalActivities) * 100}%` : '0%',
-                    backgroundColor: item.name === 'REUNION' ? '#3b82f6' : item.name === 'VISITA' ? '#10b981' : '#f59e0b'
-                  }
-                ]} />
+                <View
+                  style={[
+                    styles.distBarFill,
+                    {
+                      width:
+                        kpis.totalActivities > 0
+                          ? `${(item.value / kpis.totalActivities) * 100}%`
+                          : '0%',
+                      backgroundColor:
+                        item.name === 'REUNION'
+                          ? '#3b82f6'
+                          : item.name === 'VISITA'
+                            ? '#10b981'
+                            : item.name === 'INSPECCION'
+                              ? '#8b5cf6'
+                              : item.name === 'TALLER'
+                                ? '#f59e0b'
+                                : '#94a3b8',
+                    },
+                  ]}
+                />
               </View>
             </View>
           ))}
         </View>
 
-        {/* Botón Central Terra Voz */}
         <View style={styles.centerActionContainer}>
-          <TouchableOpacity 
-            style={styles.mainActionButton} 
+          <TouchableOpacity
+            style={styles.mainActionButton}
             onPress={() => setShowTerraVoz(true)}
             activeOpacity={0.8}
           >
@@ -96,18 +173,16 @@ export default function DashboardScreen() {
               <MaterialCommunityIcons name="microphone" size={48} color="#fff" />
             </View>
             <Text style={styles.mainActionText}>Terra Voz</Text>
-            <Text style={styles.mainActionSubtext}>Captura inteligente por voz</Text>
+            <Text style={styles.mainActionSubtext}>
+              {isAdmin ? 'Captura territorial con confirmación' : 'Reportar actividad de mi comunidad'}
+            </Text>
           </TouchableOpacity>
         </View>
 
-        <Modal
-          visible={showTerraVoz}
-          transparent={true}
-          animationType="fade"
-        >
+        <Modal visible={showTerraVoz} transparent animationType="fade">
           <View style={styles.modalOverlay}>
-            <TerraVozCapture 
-              communityId={communityId} 
+            <TerraVozCapture
+              communityId={isCommunity ? communityId : undefined}
               onSuccess={() => {
                 setShowTerraVoz(false);
                 refetch();
@@ -135,11 +210,41 @@ const styles = StyleSheet.create({
     padding: 20,
     flexGrow: 1,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: 'bold',
-    marginBottom: 20,
     color: '#1e293b',
+  },
+  roleBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  roleBadgeAdmin: {
+    backgroundColor: '#dbeafe',
+  },
+  roleBadgeCommunity: {
+    backgroundColor: '#dcfce7',
+  },
+  roleBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  logoutBtn: {
+    padding: 8,
+  },
+  scopeHint: {
+    fontSize: 13,
+    color: '#64748b',
+    marginBottom: 16,
   },
   confidenceCard: {
     backgroundColor: 'white',
@@ -192,7 +297,7 @@ const styles = StyleSheet.create({
   statCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 15,
+    padding: 12,
     width: '31%',
     alignItems: 'center',
     borderLeftWidth: 4,
@@ -203,14 +308,21 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   statNumber: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#1e293b',
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#64748b',
     marginTop: 4,
+    textAlign: 'center',
+  },
+  statHint: {
+    fontSize: 9,
+    color: '#94a3b8',
+    marginTop: 4,
+    textAlign: 'center',
   },
   distributionSection: {
     backgroundColor: 'white',
@@ -218,11 +330,21 @@ const styles = StyleSheet.create({
     padding: 20,
     marginBottom: 25,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#1e293b',
-    marginBottom: 15,
+  },
+  sectionMeta: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '600',
   },
   distItem: {
     marginBottom: 15,
@@ -289,6 +411,7 @@ const styles = StyleSheet.create({
   mainActionSubtext: {
     fontSize: 12,
     color: '#64748b',
+    textAlign: 'center',
   },
   modalOverlay: {
     flex: 1,

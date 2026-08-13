@@ -9,41 +9,44 @@ import { useRouter } from 'expo-router';
 interface Props {
   activities: Activity[];
   isLoading?: boolean;
+  totalCount?: number;
 }
 
-export const MemoriaViva: React.FC<Props> = ({ activities, isLoading }) => {
+export const MemoriaViva: React.FC<Props> = ({ activities, isLoading, totalCount }) => {
   const router = useRouter();
 
   const renderCommitment = (commitment: Commitment) => (
     <View key={commitment.id} style={styles.commitmentItem}>
-      <MaterialCommunityIcons 
-        name={commitment.estado === 'CUMPLIDO' ? "check-circle" : "clock-outline"} 
-        size={16} 
-        color={commitment.estado === 'CUMPLIDO' ? "#10b981" : "#f59e0b"} 
+      <MaterialCommunityIcons
+        name={commitment.estado === 'CUMPLIDO' ? 'check-circle' : 'clock-outline'}
+        size={16}
+        color={commitment.estado === 'CUMPLIDO' ? '#10b981' : '#f59e0b'}
       />
       <View style={styles.commitmentTextContainer}>
         <Text style={styles.commitmentDesc}>{commitment.descripcion}</Text>
         <Text style={styles.commitmentMeta}>
-          Resp: {commitment.responsable} • {commitment.fecha_cumplimiento ? format(new Date(commitment.fecha_cumplimiento), 'dd MMM', { locale: es }) : 'Sin fecha'}
+          Resp: {commitment.responsable} •{' '}
+          {commitment.fecha_cumplimiento
+            ? format(new Date(commitment.fecha_cumplimiento), 'dd MMM', { locale: es })
+            : 'Sin fecha'}
         </Text>
       </View>
     </View>
   );
 
-  const renderActivity = ({ item, index }: { item: Activity, index: number }) => {
+  const renderActivity = ({ item, index }: { item: Activity; index: number }) => {
     const activityDate = new Date(item.fecha);
     const isLast = index === activities.length - 1;
+    const isProgramada = item.estado === 'PROGRAMADA';
 
     return (
       <View style={styles.activityContainer}>
-        {/* Timeline Line */}
         <View style={styles.timelineContainer}>
           <View style={[styles.dot, { backgroundColor: getActivityColor(item.tipo) }]} />
           {!isLast && <View style={styles.line} />}
         </View>
 
-        {/* Content Card */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.card}
           onPress={() => router.push(`/(tabs)/memoria/${item.id}`)}
           activeOpacity={0.7}
@@ -52,10 +55,17 @@ export const MemoriaViva: React.FC<Props> = ({ activities, isLoading }) => {
             <View style={[styles.typeTag, { backgroundColor: getActivityColor(item.tipo) + '20' }]}>
               <Text style={[styles.typeTagText, { color: getActivityColor(item.tipo) }]}>{item.tipo}</Text>
             </View>
-            <Text style={styles.dateText}>
-              {format(activityDate, "d 'de' MMMM, yyyy", { locale: es })}
-            </Text>
+            <View style={[styles.statusTag, isProgramada ? styles.statusProgramada : styles.statusEjecutada]}>
+              <Text style={[styles.statusTagText, isProgramada ? styles.statusProgramadaText : styles.statusEjecutadaText]}>
+                {isProgramada ? 'Programada' : 'Ejecutada'}
+              </Text>
+            </View>
           </View>
+
+          <Text style={styles.dateText}>
+            {format(activityDate, "d 'de' MMMM, yyyy", { locale: es })}
+            {item.communityName ? ` · ${item.communityName}` : ''}
+          </Text>
 
           <Text style={styles.description}>{item.descripcion}</Text>
 
@@ -76,6 +86,11 @@ export const MemoriaViva: React.FC<Props> = ({ activities, isLoading }) => {
               {item.commitments.map(renderCommitment)}
             </View>
           )}
+
+          <View style={styles.followRow}>
+            <Text style={styles.followText}>Ver seguimiento</Text>
+            <MaterialCommunityIcons name="chevron-right" size={18} color="#2563eb" />
+          </View>
         </TouchableOpacity>
       </View>
     );
@@ -105,6 +120,12 @@ export const MemoriaViva: React.FC<Props> = ({ activities, isLoading }) => {
       keyExtractor={(item) => item.id}
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}
+      ListHeaderComponent={
+        <Text style={styles.listSummary}>
+          {activities.length} en esta vista
+          {typeof totalCount === 'number' ? ` · ${totalCount} en total` : ''}
+        </Text>
+      }
     />
   );
 };
@@ -123,6 +144,12 @@ const styles = StyleSheet.create({
   listContent: {
     padding: 20,
     paddingTop: 10,
+  },
+  listSummary: {
+    fontSize: 12,
+    color: '#64748b',
+    marginBottom: 12,
+    fontWeight: '600',
   },
   activityContainer: {
     flexDirection: 'row',
@@ -161,7 +188,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   typeTag: {
     paddingHorizontal: 8,
@@ -172,9 +199,31 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: 'bold',
   },
+  statusTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  statusProgramada: {
+    backgroundColor: '#fef3c7',
+  },
+  statusEjecutada: {
+    backgroundColor: '#dcfce7',
+  },
+  statusTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  statusProgramadaText: {
+    color: '#b45309',
+  },
+  statusEjecutadaText: {
+    color: '#15803d',
+  },
   dateText: {
     fontSize: 12,
     color: '#9ca3af',
+    marginBottom: 8,
   },
   description: {
     fontSize: 15,
@@ -230,6 +279,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#9ca3af',
     marginTop: 2,
+  },
+  followRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: 8,
+  },
+  followText: {
+    color: '#2563eb',
+    fontWeight: '700',
+    fontSize: 13,
   },
   centered: {
     flex: 1,

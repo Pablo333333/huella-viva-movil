@@ -42,6 +42,28 @@ export default function LoginScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Huella Viva</Text>
+      <Text style={styles.subtitle}>Acceso territorial por rol</Text>
+
+      <View style={styles.quickRow}>
+        <TouchableOpacity
+          style={styles.quickChip}
+          onPress={() => {
+            setEmail('admin@test.com');
+            setPassword('1234');
+          }}
+        >
+          <Text style={styles.quickChipText}>Admin</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.quickChip, styles.quickChipCommunity]}
+          onPress={() => {
+            setEmail('comunidad@test.com');
+            setPassword('1234');
+          }}
+        >
+          <Text style={styles.quickChipText}>Comunidad</Text>
+        </TouchableOpacity>
+      </View>
       
       <TextInput
         style={styles.input}
@@ -103,10 +125,29 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 18,
+    fontSize: 16,
     color: '#666',
     textAlign: 'center',
-    marginBottom: 40,
+    marginBottom: 16,
+  },
+  quickRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 20,
+  },
+  quickChip: {
+    backgroundColor: '#dbeafe',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  quickChipCommunity: {
+    backgroundColor: '#dcfce7',
+  },
+  quickChipText: {
+    fontWeight: '700',
+    color: '#1e293b',
   },
   input: {
     height: 50,

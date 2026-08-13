@@ -4,32 +4,26 @@ import {
   View,
   Modal,
   TouchableOpacity,
-  ActivityIndicator,
   Platform,
 } from 'react-native';
 import { LiveMap } from '@/components/LiveMap';
 import { TerraVozCapture } from '@/components/TerraVozCapture';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useDefaultCommunity } from '@/features/communities/hooks/use-communities';
+import { useUserCommunity } from '@/features/communities/hooks/use-communities';
 import { TerraVozResponse } from '@/features/terra-voz/services/terra-voz.service';
+import { useAuth } from '@/features/auth/context/AuthProvider';
+import { isCommunityRole } from '@/features/auth/roles';
 
 export default function MapScreen() {
   const [showTerraVoz, setShowTerraVoz] = useState(false);
   const [mapKey, setMapKey] = useState(0);
-  const { communityId, isLoading } = useDefaultCommunity();
+  const { user } = useAuth();
+  const { communityId } = useUserCommunity();
 
   const handleSuccess = (_result: TerraVozResponse) => {
     setShowTerraVoz(false);
     setMapKey((k) => k + 1);
   };
-
-  if (isLoading) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color="#2563eb" />
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
@@ -46,7 +40,7 @@ export default function MapScreen() {
       <Modal visible={showTerraVoz} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <TerraVozCapture
-            communityId={communityId}
+            communityId={isCommunityRole(user?.role) ? communityId : undefined}
             onSuccess={handleSuccess}
             onCancel={() => setShowTerraVoz(false)}
           />
@@ -59,12 +53,6 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  loading: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
   },
   fab: {
     position: 'absolute',

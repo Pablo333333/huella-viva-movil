@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "huella-viva",
+    "name": "Huella Viva",
     "slug": "huella-viva",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,7 +8,11 @@
     "scheme": "mobile",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Huella Viva necesita tu ubicación para centrar el mapa territorial y asignar la comunidad.",
+        "NSMicrophoneUsageDescription": "Huella Viva usa el micrófono para Terra Voz."
+      }
     },
     "android": {
       "adaptiveIcon": {

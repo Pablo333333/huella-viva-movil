@@ -5,6 +5,8 @@ export interface Community {
   nombre: string;
   poblacion: number;
   location?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
   boundary?: string | null;
   createdAt: string;
   updatedAt: string;
