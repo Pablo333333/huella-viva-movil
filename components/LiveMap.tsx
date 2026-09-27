@@ -10,7 +10,12 @@ import {
 import MapView, { Camera, Marker, Region } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
-import { MapErrorBoundary, SafeMap, sanitizeCamera } from './SafeMap';
+import {
+  MapErrorBoundary,
+  SafeMap,
+  sanitizeCamera,
+  sanitizeRegion,
+} from './SafeMap';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useActivities } from '@/features/activities/hooks/use-activities';
 import { useCommunities } from '@/features/communities/hooks/use-communities';
@@ -39,9 +44,33 @@ const MIN_DELTA = 0.02;
 const MAX_DELTA = 0.35;
 const BBOX_PADDING = 0.2;
 const FALLBACK_COLOMBIA = { latitude: 4.6097, longitude: -74.0817 };
-/** Inclinación fija tipo centro de mando (segura en iOS y Android). */
-const COMMAND_PITCH = 45;
+/** Pitch moderado: valores altos + satellite pueden tumbar el proceso nativo en Android. */
+const COMMAND_PITCH = Platform.OS === 'android' ? 30 : 45;
 const COMMAND_HEADING = 0;
+const GPS_TIMEOUT_MS = 8_000;
+
+const DEFAULT_REGION: Region = {
+  latitude: FALLBACK_COLOMBIA.latitude,
+  longitude: FALLBACK_COLOMBIA.longitude,
+  latitudeDelta: NEIGHBORHOOD_DELTA,
+  longitudeDelta: NEIGHBORHOOD_DELTA,
+};
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
 
 function regionToCommandCamera(region: Region): Camera {
   if (Platform.OS === 'android') {
@@ -73,17 +102,6 @@ function isValidCoord(lat?: number | null, lng?: number | null): boolean {
     lng !== 0 &&
     Math.abs(lat) <= 90 &&
     Math.abs(lng) <= 180
-  );
-}
-
-function isValidRegion(region: Region | null): region is Region {
-  return (
-    !!region &&
-    isValidCoord(region.latitude, region.longitude) &&
-    Number.isFinite(region.latitudeDelta) &&
-    Number.isFinite(region.longitudeDelta) &&
-    region.latitudeDelta > 0 &&
-    region.longitudeDelta > 0
   );
 }
 
@@ -199,29 +217,50 @@ export const LiveMap: React.FC = () => {
   const mapRef = useRef<MapView>(null);
   const mapReadyRef = useRef(false);
   const gpsInitStarted = useRef(false);
+  const regionRef = useRef<Region>(DEFAULT_REGION);
 
   const [selectedPoint, setSelectedPoint] = useState<MapPoint | null>(null);
-  const [initialRegion, setInitialRegion] = useState<Region | null>(null);
-  const [locationLabel, setLocationLabel] = useState('SOLICITANDO GPS…');
-  const [bootstrapping, setBootstrapping] = useState(true);
+  /** Siempre hay región válida (Colombia) para no montar MapView con null/NaN. */
+  const [mapRegion, setMapRegion] = useState<Region>(DEFAULT_REGION);
+  const [locationLabel, setLocationLabel] = useState('CARGANDO MAPA…');
   const [canShowUserLocation, setCanShowUserLocation] = useState(false);
   const [mapMounted, setMapMounted] = useState(false);
+  const safeInitialRegion = useMemo(
+    () => sanitizeRegion(mapRegion),
+    [mapRegion],
+  );
+  regionRef.current = safeInitialRegion;
 
   const { data: communities } = useCommunities();
   const { data: activities } = useActivities();
 
   const applyCommandCamera = (region: Region, animate = false) => {
-    const camera = sanitizeCamera(regionToCommandCamera(region));
+    const camera = sanitizeCamera(regionToCommandCamera(sanitizeRegion(region)));
     if (!camera || !mapRef.current) return;
-    if (animate) {
-      mapRef.current.animateCamera(camera, { duration: 700 });
-    } else {
-      mapRef.current.setCamera(camera);
+    try {
+      if (animate) {
+        mapRef.current.animateCamera(camera, { duration: 700 });
+      } else {
+        mapRef.current.setCamera(camera);
+      }
+    } catch (err) {
+      console.warn('LiveMap: applyCommandCamera falló', err);
+    }
+  };
+
+  const commitRegion = (region: Region, label: string, animate = true) => {
+    const safe = sanitizeRegion(region);
+    regionRef.current = safe;
+    setMapRegion(safe);
+    setLocationLabel(label);
+    if (mapReadyRef.current) {
+      applyCommandCamera(safe, animate);
     }
   };
 
   useEffect(() => {
-    const timeout = setTimeout(() => setMapMounted(true), 40);
+    // Breve defer para evitar montar el mapa nativo en el mismo frame del tab switch.
+    const timeout = setTimeout(() => setMapMounted(true), 80);
     return () => clearTimeout(timeout);
   }, []);
 
@@ -298,17 +337,23 @@ export const LiveMap: React.FC = () => {
           }
 
           if (latitude == null || longitude == null) {
-            const current = await Location.getCurrentPositionAsync({
-              accuracy: Location.Accuracy.Balanced,
-            });
+            const current = await withTimeout(
+              Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.Balanced,
+              }),
+              GPS_TIMEOUT_MS,
+            );
             if (isValidCoord(current.coords.latitude, current.coords.longitude)) {
               latitude = current.coords.latitude;
               longitude = current.coords.longitude;
             }
           } else {
-            Location.getCurrentPositionAsync({
-              accuracy: Location.Accuracy.Balanced,
-            })
+            withTimeout(
+              Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.Balanced,
+              }),
+              GPS_TIMEOUT_MS,
+            )
               .then((position) => {
                 if (cancelled) return;
                 if (
@@ -324,19 +369,16 @@ export const LiveMap: React.FC = () => {
                   position.coords.longitude,
                   USER_DELTA,
                 );
-                setInitialRegion(refined);
-                if (mapReadyRef.current) {
-                  applyCommandCamera(refined, true);
-                }
+                commitRegion(refined, 'TU UBICACIÓN · CENTRO DE MANDO');
               })
               .catch(() => {});
           }
 
           if (latitude != null && longitude != null) {
-            const region = buildRegion(latitude, longitude, USER_DELTA);
-            setInitialRegion(region);
-            setLocationLabel('TU UBICACIÓN · CENTRO DE MANDO');
-            setBootstrapping(false);
+            commitRegion(
+              buildRegion(latitude, longitude, USER_DELTA),
+              'TU UBICACIÓN · CENTRO DE MANDO',
+            );
             return;
           }
         } catch (err) {
@@ -346,18 +388,18 @@ export const LiveMap: React.FC = () => {
 
       if (cancelled) return;
       const pinsRegion = buildRegionFromPoints(points);
-      setInitialRegion(
+      const fallback =
         pinsRegion ||
-          buildRegion(FALLBACK_COLOMBIA.latitude, FALLBACK_COLOMBIA.longitude),
-      );
-      setLocationLabel(
+        buildRegion(FALLBACK_COLOMBIA.latitude, FALLBACK_COLOMBIA.longitude);
+      commitRegion(
+        fallback,
         granted
           ? pinsRegion
             ? 'ENCUADRE · PINES'
             : 'FALLBACK · COLOMBIA'
           : 'GPS DENEGADO · ENCUADRE',
+        false,
       );
-      setBootstrapping(false);
     }
 
     bootstrapUserLocation();
@@ -403,15 +445,11 @@ export const LiveMap: React.FC = () => {
     return 'home-group';
   };
 
-  if (bootstrapping || !isValidRegion(initialRegion) || !mapMounted) {
+  if (!mapMounted) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={styles.loadingText}>
-          {locationLabel === 'SOLICITANDO GPS…'
-            ? 'Activando ubicación para el centro de mando...'
-            : 'Centrando mapa en tu posición...'}
-        </Text>
+        <Text style={styles.loadingText}>Preparando mapa territorial...</Text>
       </View>
     );
   }
@@ -423,11 +461,14 @@ export const LiveMap: React.FC = () => {
           ref={mapRef}
           style={styles.map}
           mapType="satellite"
-          initialRegion={initialRegion}
+          initialRegion={safeInitialRegion}
           onMapReady={() => {
             mapReadyRef.current = true;
-            if (!initialRegion) return;
-            applyCommandCamera(initialRegion, true);
+            // Diferir cámara 3D un frame: setCamera inmediato tras onMapReady
+            // puede tumbar Google Maps en algunos APK Android.
+            requestAnimationFrame(() => {
+              applyCommandCamera(regionRef.current, true);
+            });
           }}
           pitchEnabled={false}
           rotateEnabled

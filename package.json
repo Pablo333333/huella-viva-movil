@@ -59,7 +59,10 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "clean": "powershell -Command \"if (Test-Path node_modules/.cache) { Remove-Item -Recurse -Force node_modules/.cache }; if (Test-Path .expo) { Remove-Item -Recurse -Force .expo }; if (Test-Path android/app/build) { Remove-Item -Recurse -Force android/app/build }\"",
-    "bundle:android": "npm run clean && npx expo export:embed --platform android --dev false --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res"
+    "prebuild:android": "npx expo prebuild --platform android",
+    "bundle:android": "npx expo export:embed --platform android --dev false --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res",
+    "build:apk": "npm run prebuild:android && npm run bundle:android && cd android && .\\gradlew.bat assembleRelease",
+    "verify:maps-key": "powershell -Command \"$m='android/app/src/main/AndroidManifest.xml'; if (-not (Test-Path $m)) { Write-Error 'No existe AndroidManifest. Ejecuta npm run prebuild:android'; exit 1 }; $hit=Select-String -Path $m -Pattern 'com.google.android.geo.API_KEY'; if (-not $hit) { Write-Error 'Falta com.google.android.geo.API_KEY en el manifiesto'; exit 1 }; $hit | ForEach-Object { $_.Line.Trim() }\""
   },
   "private": true
 }
